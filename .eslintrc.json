@@ -1,0 +1,31 @@
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 12,
+    "sourceType": "script"
+  },
+  "globals": {
+    "$": "readonly",
+    "jQuery": "readonly",
+    "API": "readonly",
+    "AppConfig": "readonly",
+    "svg": "readonly"
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "rules": {
+    "no-console": "off",
+    "no-unused-vars": "off",
+    "no-undef": "error"
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    "assets/css/",
+    "dist/"
+  ]
+}
