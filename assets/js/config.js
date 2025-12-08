@@ -20,7 +20,8 @@ window.AppConfig=(function(){
         storage:{
             cartKey:'me_cart',
             wishlistKey:'me_wishlist',
-            tokenKey:'me_token'
+            tokenKey:'me_token',
+            paymentKey:'me_payment'
         },
         theme:{
             primaryStart:'#7c3aed',
@@ -134,12 +135,13 @@ window.API=(function(){
         authRegister:function(body){return post(APIConf.endpoints.authRegister,{body:body})},
         authLogin:function(body){return post(APIConf.endpoints.authLogin,{body:body})},
         authProfile:function(){return get(APIConf.endpoints.authProfile)},
+        authProfileUpdate:function(body){return put(APIConf.endpoints.authProfile,{body:body})},
         authLogout:function(){return post(APIConf.endpoints.authLogout)},
         authValidateToken:function(){return get(APIConf.endpoints.authValidateToken)},
         getWishlist:function(){return get(APIConf.endpoints.wishlist)},
-        addWishlist:function(id){return post(APIConf.endpoints.wishlistAdd,{body:{id:id}})},
-        removeWishlist:function(id){return post(APIConf.endpoints.wishlistRemove,{body:{id:id}})},
-        clearWishlist:function(){return post(APIConf.endpoints.wishlistClear)},
+        addWishlist:function(id){return post(APIConf.endpoints.wishlistAdd,{body:{product_id:id}})},
+        removeWishlist:function(id){return del(APIConf.endpoints.wishlistRemove,{body:{product_id:id}})},
+        clearWishlist:function(){return del(APIConf.endpoints.wishlistClear)},
         checkWishlist:function(id){return get(APIConf.endpoints.wishlistCheck,{params:{id:id}})},
         moveWishlistToCart:function(id){return post(APIConf.endpoints.wishlistMoveToCart,{params:{id:id}})},
         reviewsAdd:function(body){return post(APIConf.endpoints.reviewsAdd,{body:body})},
@@ -159,10 +161,10 @@ window.API=(function(){
         ordersTracking:function(id){return get(APIConf.endpoints.ordersTracking,{params:{id:id}})},
         ordersStatuses:function(){return get(APIConf.endpoints.ordersStatuses)},
         cart:function(){return get(APIConf.endpoints.cart)},
-        cartAdd:function(id){return post(APIConf.endpoints.cartAdd,{body:{id:id}})},
+        cartAdd:function(productId,quantity){return post(APIConf.endpoints.cartAdd,{body:{product_id:productId,quantity:quantity||1}})},
         cartUpdate:function(body){return put(APIConf.endpoints.cartUpdate,{body:body})},
-        cartRemove:function(id){return post(APIConf.endpoints.cartRemove,{body:{id:id}})},
-        cartClear:function(){return post(APIConf.endpoints.cartClear)},
+        cartRemove:function(cartItemKey){return del(APIConf.endpoints.cartRemove,{body:{cart_item_key:cartItemKey}})},
+        cartClear:function(){return del(APIConf.endpoints.cartClear)},
         cartCount:function(){return get(APIConf.endpoints.cartCount)}
     }
 })();
