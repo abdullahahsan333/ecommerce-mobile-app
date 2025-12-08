@@ -75,6 +75,7 @@ window.formatViewerCount = formatViewerCount;
     cartRelatedLoading: false,
     user: null,
     ordersCount: 0,
+    wishlistCount: 0,
     reviewsCount: 0,
     addressesCount: 0,
     vouchersCount: 0,
@@ -819,7 +820,7 @@ window.formatViewerCount = formatViewerCount;
         });
       API.reviewsUser()
         .done(function(res){
-          var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : []);
+          var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : ((res && Array.isArray(res.data)) ? res.data : []));
           state.reviewsCount = Array.isArray(items) ? items.length : (res && typeof res.count==='number' ? res.count : 0);
           render();
         });
@@ -834,6 +835,9 @@ window.formatViewerCount = formatViewerCount;
           var raw = (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
           var ids = Array.isArray(raw) ? raw.map(function(x){ return typeof x==='object' ? (x.id||x.product_id) : parseInt(x,10); }).filter(function(x){ return !isNaN(x); }) : [];
           state.serverWishlistIds = ids;
+          var sum = (res && res.summary) || (res && res.data && res.data.summary) || {};
+          var cnt = (sum && typeof sum.total_items==='number') ? sum.total_items : ids.length;
+          state.wishlistCount = cnt;
           render();
         });
       state.vouchersCount = state.vouchersCount || 3;
@@ -926,6 +930,12 @@ window.formatViewerCount = formatViewerCount;
       API.getWishlist()
         .done(function(res){
           state.serverWishlist = res || {};
+          var raw = (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
+          var ids = Array.isArray(raw) ? raw.map(function(x){ return typeof x==='object' ? (x.id||x.product_id) : parseInt(x,10); }).filter(function(x){ return !isNaN(x); }) : [];
+          state.serverWishlistIds = ids;
+          var sum = (res && res.summary) || (res && res.data && res.data.summary) || {};
+          var cnt = (sum && typeof sum.total_items==='number') ? sum.total_items : ids.length;
+          state.wishlistCount = cnt;
           render();
         })
         .fail(function(){ state.serverWishlist = { wishlist: [] }; render(); });
@@ -933,7 +943,7 @@ window.formatViewerCount = formatViewerCount;
     if (state.route === 'reviews') {
       API.reviewsUser()
         .done(function(res){
-          var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : []);
+          var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : ((res && Array.isArray(res.data)) ? res.data : []));
           state.reviewsList = Array.isArray(items) ? items : [];
           render();
         })
@@ -1715,11 +1725,12 @@ window.formatViewerCount = formatViewerCount;
     </div>`;
   }
   
-  function profile() {
-    var name = (state.user && (state.user.display_name || (state.user.first_name && state.user.last_name ? (state.user.first_name + ' ' + state.user.last_name) : state.user.username))) || 'Guest User';
-    var email = (state.user && state.user.email) || '';
-    var avatarUrl = (state.user && state.user.avatarUrl) || '';
-    return `
+function profile() {
+  var name = (state.user && (state.user.display_name || (state.user.first_name && state.user.last_name ? (state.user.first_name + ' ' + state.user.last_name) : state.user.username))) || 'Guest User';
+  var email = (state.user && state.user.email) || '';
+  var avatarUrl = (state.user && state.user.avatarUrl) || '';
+  var wc = (Array.isArray(state.serverWishlistIds) && state.serverWishlistIds.length) ? state.serverWishlistIds.length : (function(){ var s=state.serverWishlist||{}; var raw=Array.isArray(s)?s:(s.wishlist||s.items||((s.data&&s.data.wishlist)||[])); var n=Array.isArray(raw)?raw.length:0; return n || ((Array.isArray(state.wishlist)?state.wishlist.length:0)); })();
+  return `
     <div class="px-4 py-3">
       <div class="flex items-center justify-between mb-3">
         <div class="text-lg font-semibold">Profile</div>
@@ -1743,7 +1754,7 @@ window.formatViewerCount = formatViewerCount;
             <div class="text-xs text-gray-600">ORDERS</div>
           </div>
           <div class="rounded-xl bg-white p-3 text-center border border-gray-200">
-            <div class="text-xl font-bold">${state.wishlist.length}</div>
+            <div class="text-xl font-bold">${state.wishlistCount}</div>
             <div class="text-xs text-gray-600">WISHLIST</div>
           </div>
           <div class="rounded-xl bg-white p-3 text-center border border-gray-200">
@@ -1789,10 +1800,10 @@ window.formatViewerCount = formatViewerCount;
           <a id="navWishlist" href="#wishlist" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
             <div class="flex items-center gap-3">
               <div class="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center">${svg('heart','w-5 h-5')}</div>
-              <div>
-                <div class="text-sm font-medium">Wishlist</div>
-                <div class="text-xs text-gray-500">${state.wishlist.length} items saved</div>
-              </div>
+          <div>
+            <div class="text-sm font-medium">Wishlist</div>
+            <div class="text-xs text-gray-500">${state.wishlistCount} items saved</div>
+          </div>
             </div>
             <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
           </a>
