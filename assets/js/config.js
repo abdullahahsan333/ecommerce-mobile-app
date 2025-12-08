@@ -110,7 +110,14 @@ window.Assets=(function(){
 window.API=(function(){
     var AppConf=window.AppConfig; var APIConf=window.APIConfig;
     function build(endpoint,params,query){var url=APIConf.baseUrl+APIConf.namespace+endpoint;if(params){Object.keys(params).forEach(function(k){url=url.replace(':'+k,encodeURIComponent(params[k]))})}if(query){var qs=Object.keys(query).filter(function(k){return query[k]!==undefined&&query[k]!==null&&query[k]!==''}).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(query[k])}).join('&');if(qs) url+=('?'+qs)}return url}
-    function token(){try{var t=localStorage.getItem(AppConf.storage.tokenKey);return t?JSON.parse(t):null}catch(e){return null}}
+    function token(){
+        try{
+            var t1=localStorage.getItem('X-Auth-Token');
+            if(t1){return JSON.parse(t1)}
+            var t=localStorage.getItem(AppConf.storage.tokenKey);
+            return t?JSON.parse(t):null
+        }catch(e){return null}
+    }
     function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Content-Type':'application/json','Accept':'application/json'};var t=token();if(t) headers['X-Auth-Token']=t;return $.ajax({method:method,url:url,headers:headers,data:opt.body?JSON.stringify(opt.body):null})}
     function get(endpoint,opt){return req('GET',endpoint,opt)}
     function post(endpoint,opt){return req('POST',endpoint,opt)}

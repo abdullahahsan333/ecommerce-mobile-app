@@ -72,7 +72,13 @@ window.formatViewerCount = formatViewerCount;
     relatedProducts: {},
     relatedLoading: {},
     cartRelatedProducts: [],
-    cartRelatedLoading: false
+    cartRelatedLoading: false,
+    user: null,
+    ordersCount: 0,
+    reviewsCount: 0,
+    addressesCount: 0,
+    vouchersCount: 0,
+    notificationsCount: 0
   };
   
   function load(k){
@@ -783,6 +789,45 @@ window.formatViewerCount = formatViewerCount;
     }
     state.route = hash;
     state.query = q;
+    var tkn=null;try{var t1=localStorage.getItem('X-Auth-Token');var t=t1||localStorage.getItem(AppConfig.storage.tokenKey);tkn=t?JSON.parse(t):null}catch(e){}
+    if (state.route === 'profile' && !tkn) {
+      state.route = 'login';
+    }
+    if (state.route === 'profile' && tkn) {
+      API.authProfile()
+        .done(function(res){
+          var u = (res && res.data) || res || {};
+          state.user = {
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            display_name: u.display_name || (u.first_name && u.last_name ? (u.first_name + ' ' + u.last_name) : (u.username || '')),
+            first_name: u.first_name,
+            last_name: u.last_name
+          };
+          render();
+        });
+      API.orders()
+        .done(function(res){
+          var items = (res && res.data && res.data.orders) || (res && res.orders) || (Array.isArray(res) ? res : []);
+          state.ordersCount = Array.isArray(items) ? items.length : (res && typeof res.count==='number' ? res.count : 0);
+          render();
+        });
+      API.reviewsUser()
+        .done(function(res){
+          var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : []);
+          state.reviewsCount = Array.isArray(items) ? items.length : (res && typeof res.count==='number' ? res.count : 0);
+          render();
+        });
+      API.addresses()
+        .done(function(res){
+          var items = (res && res.data && res.data.addresses) || (res && res.addresses) || (Array.isArray(res) ? res : []);
+          state.addressesCount = Array.isArray(items) ? items.length : (res && typeof res.count==='number' ? res.count : 0);
+          render();
+        });
+      state.vouchersCount = state.vouchersCount || 3;
+      state.notificationsCount = state.notificationsCount || 5;
+    }
     if (state.route === 'product') {
       state.productQty = 1;
       state.productImageIndex = 0;
@@ -1583,36 +1628,159 @@ window.formatViewerCount = formatViewerCount;
   }
   
   function profile() {
+    var name = (state.user && (state.user.display_name || (state.user.first_name && state.user.last_name ? (state.user.first_name + ' ' + state.user.last_name) : state.user.username))) || 'Guest User';
+    var email = (state.user && state.user.email) || '';
     return `
     <div class="px-4 py-3">
-      <div class="flex items-center gap-3 p-4 bg-gradient-to-r from-brand/10 to-pink-50 rounded-2xl">
-        <img src="${Assets.local('assets/img/user01.png')}" class="w-16 h-16 rounded-full object-cover" alt="User"/>
-        <div>
-          <div class="font-semibold">Guest User</div>
-          <div class="text-sm text-gray-500">Welcome to Live Shopping</div>
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-lg font-semibold">Profile</div>
+        <button id="profileSettings" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('settings','w-5 h-5')}</button>
+      </div>
+      <div class="rounded-2xl p-5 bg-gradient-to-r from-brand/10 to-pink-50">
+        <div class="flex items-center gap-4">
+          <div class="relative">
+            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xl font-semibold">${(name||'U').charAt(0)}</div>
+            <button id="editAvatar" class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-white text-gray-700 shadow flex items-center justify-center">${svg('camera','w-4 h-4')}</button>
+          </div>
+          <div class="flex-1">
+            <div class="text-base font-semibold">${name}</div>
+            ${email ? `<div class="text-sm text-gray-500">${email}</div>` : `<div class="text-sm text-gray-500">Welcome to Live Shopping</div>`}
+            <button id="editProfile" class="mt-3 px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Edit Profile</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mt-5">
+          <div class="rounded-xl bg-white p-3 text-center border border-gray-200">
+            <div class="text-xl font-bold">${state.ordersCount}</div>
+            <div class="text-xs text-gray-600">ORDERS</div>
+          </div>
+          <div class="rounded-xl bg-white p-3 text-center border border-gray-200">
+            <div class="text-xl font-bold">${state.wishlist.length}</div>
+            <div class="text-xs text-gray-600">WISHLIST</div>
+          </div>
+          <div class="rounded-xl bg-white p-3 text-center border border-gray-200">
+            <div class="text-xl font-bold">${state.reviewsCount}</div>
+            <div class="text-xs text-gray-600">REVIEWS</div>
+          </div>
         </div>
       </div>
-      
-      <div class="mt-6 grid grid-cols-2 gap-3">
-        <a href="#wishlist" class="p-4 rounded-xl border border-gray-200 text-center hover:bg-gray-50 transition-colors">
-          <div class="text-lg font-semibold text-brand">${state.wishlist.length}</div>
-          <div class="text-sm text-gray-600">Wishlist</div>
-        </a>
-        
-        <a href="#orders" class="p-4 rounded-xl border border-gray-200 text-center hover:bg-gray-50 transition-colors">
-          <div class="text-lg font-semibold text-brand">0</div>
-          <div class="text-sm text-gray-600">Orders</div>
-        </a>
-        
-        <a href="#cart" class="p-4 rounded-xl border border-gray-200 text-center hover:bg-gray-50 transition-colors">
-          <div class="text-lg font-semibold text-brand">${state.cart.length}</div>
-          <div class="text-sm text-gray-600">Cart</div>
-        </a>
-        
-        <div class="p-4 rounded-xl border border-gray-200 text-center hover:bg-gray-50 transition-colors cursor-pointer" id="logoutBtn">
-          <div class="text-lg font-semibold text-gray-700">Logout</div>
-          <div class="text-sm text-gray-600">Sign out</div>
+
+      <div class="mt-6">
+        <div class="text-xs font-semibold text-gray-500 mb-2">ACCOUNT</div>
+        <div class="rounded-2xl overflow-hidden border border-gray-200 bg-white">
+          <a id="navOrders" href="#orders" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">${svg('list','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">My Orders</div>
+                <div class="text-xs text-gray-500">Track, return or buy again</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+          <a id="navAddresses" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-green-100 text-green-600 flex items-center justify-center">${svg('map','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Shipping Addresses</div>
+                <div class="text-xs text-gray-500">${state.addressesCount} addresses</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+          <a id="navPayments" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">${svg('card','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Payment Methods</div>
+                <div class="text-xs text-gray-500">Manage your cards</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+          <a id="navWishlist" href="#wishlist" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center">${svg('heart','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Wishlist</div>
+                <div class="text-xs text-gray-500">${state.wishlist.length} items saved</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
         </div>
+      </div>
+
+      <div class="mt-6">
+        <div class="text-xs font-semibold text-gray-500 mb-2">SHOPPING</div>
+        <div class="rounded-2xl overflow-hidden border border-gray-200 bg-white">
+          <a id="navVouchers" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">${svg('ticket','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Vouchers & Offers</div>
+                <div class="text-xs text-gray-500">Special deals for you</div>
+              </div>
+            </div>
+            <div class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600">${state.vouchersCount}</div>
+          </a>
+          <a id="navNotifications" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-yellow-100 text-yellow-700 flex items-center justify-center">${svg('bell','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Notifications</div>
+                <div class="text-xs text-gray-500">Manage notification settings</div>
+              </div>
+            </div>
+            <div class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600">${state.notificationsCount}</div>
+          </a>
+          <a id="navReviews" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">${svg('star','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">My Reviews</div>
+                <div class="text-xs text-gray-500">${state.reviewsCount} reviews written</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <div class="text-xs font-semibold text-gray-500 mb-2">SUPPORT</div>
+        <div class="rounded-2xl overflow-hidden border border-gray-200 bg-white">
+          <a id="navHelp" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">${svg('help','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Help Center</div>
+                <div class="text-xs text-gray-500">FAQs and support</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+          <a id="navAbout" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">${svg('info','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">About</div>
+                <div class="text-xs text-gray-500">App info and policies</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+          <a id="navInvite" href="#" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-gray-100 text-gray-700 flex items-center justify-center">${svg('users','w-5 h-5')}</div>
+              <div>
+                <div class="text-sm font-medium">Invite Friends</div>
+                <div class="text-xs text-gray-500">Get $10 for each referral</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>
+        </div>
+        <button id="logoutBtn" class="w-full mt-4 px-4 py-3 rounded-xl bg-red-50 text-red-600 hover:bg-red-100">Log Out</button>
       </div>
     </div>`;
   }
@@ -1653,12 +1821,40 @@ window.formatViewerCount = formatViewerCount;
     </div>`;
   }
 
-  function chat(){
-    return `
-    <div class="px-4 py-6 text-center">
-      <div class="text-gray-500">Chat is coming soon</div>
-    </div>`
-  }
+function chat(){
+  return `
+  <div class="px-4 py-6 text-center">
+    <div class="text-gray-500">Chat is coming soon</div>
+  </div>`
+}
+ 
+function login(){
+  return `
+  <div class="px-4 py-6 max-w-md mx-auto">
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+      <h2 class="text-lg font-semibold mb-4">Sign In</h2>
+      <form id="loginForm" class="space-y-3">
+        <div>
+          <label class="text-sm text-gray-700">Email or Username</label>
+          <input id="loginIdentifier" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="you@example.com or yourusername" required/>
+        </div>
+        <div>
+          <label class="text-sm text-gray-700">Password</label>
+          <input id="loginPassword" type="password" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="••••••••" required/>
+        </div>
+        <div class="flex items-center justify-between text-sm">
+          <label class="flex items-center gap-2">
+            <input id="loginRemember" type="checkbox" class="rounded border-gray-300"/>
+            <span>Remember me</span>
+          </label>
+          <a href="#" id="loginForgot" class="text-brand">Forgot password?</a>
+        </div>
+        <button type="submit" class="w-full px-4 py-3 rounded-xl bg-brand text-white hover:bg-brandDark">Sign In</button>
+      </form>
+      <div class="text-center text-sm mt-3">Don't have an account? <a href="#" id="loginSignup" class="text-brand">Sign up</a></div>
+    </div>
+  </div>`
+ }
   
   function render() {
     var out = '';
@@ -1672,6 +1868,12 @@ window.formatViewerCount = formatViewerCount;
         break;
       case 'chat':
         out = chat();
+        break;
+      case 'login':
+        out = login();
+        break;
+      case 'register':
+        out = register();
         break;
       case 'product':
         out = product();
@@ -1858,6 +2060,8 @@ window.formatViewerCount = formatViewerCount;
     
     $(document).on('click', '#confirmLogout', function() {
       closeModal();
+      localStorage.removeItem('X-Auth-Token');
+      localStorage.removeItem('token-expires');
       localStorage.removeItem(AppConfig.storage.tokenKey);
       localStorage.removeItem(AppConfig.storage.cartKey);
       localStorage.removeItem(AppConfig.storage.wishlistKey);
@@ -1889,6 +2093,109 @@ window.formatViewerCount = formatViewerCount;
         </div>
       `);
     });
+    
+    $(document).on('submit','#loginForm',function(e){
+      e.preventDefault();
+      var identifier=$('#loginIdentifier').val()||'';
+      var password=$('#loginPassword').val()||'';
+      var remember=$('#loginRemember').prop('checked');
+      if(!identifier || !password){toast('error','Enter email/username and password');return}
+      var payload={password:password,remember:remember};
+      if(identifier.indexOf('@')>-1){payload.username=identifier}
+      API.authLogin(payload)
+        .done(function(res){
+          var token=(res&&res.session_token)||(res&&res.token)||((res&&res.data&&res.data.session_token)||(res&&res.data&&res.data.token))||(res&&res.access_token)||'';
+          if(token){
+            try{localStorage.setItem('X-Auth-Token',JSON.stringify(token));localStorage.setItem(AppConfig.storage.tokenKey,JSON.stringify(token));}catch(e){}
+            var u=(res&&res.data)||res||{};
+            try{if(u && u.token_expires!==undefined) localStorage.setItem('token-expires',JSON.stringify(u.token_expires))}catch(e){}
+            state.user={
+              id:u.id,
+              username:u.username,
+              email:u.email,
+              display_name:u.display_name||(u.first_name&&u.last_name?(u.first_name+' '+u.last_name):(u.username||'')),
+              first_name:u.first_name,
+              last_name:u.last_name
+            };
+            toast('success','Signed in');
+            location.hash='profile';
+          }else{
+            toast('error','Invalid credentials');
+          }
+        })
+        .fail(function(){toast('error','Login failed')});
+    });
+    $(document).on('click','#loginForgot',function(e){e.preventDefault();toast('success','Check your email to reset password')});
+    $(document).on('click','#loginSignup',function(e){e.preventDefault();location.hash='register'});
+    $(document).on('submit','#registerForm',function(e){
+      e.preventDefault();
+      var first=$('#regFirstName').val()||'';
+      var last=$('#regLastName').val()||'';
+      var username=$('#regUsername').val()||'';
+      var email=$('#regEmail').val()||'';
+      var pass=$('#regPassword').val()||'';
+      var pass2=$('#regPassword2').val()||'';
+      if(!first||!last||!username||!email||!pass||!pass2){toast('error','Fill all fields');return}
+      if(pass!==pass2){toast('error','Passwords do not match');return}
+      API.authRegister({first_name:first,last_name:last,username:username,email:email,password:pass})
+        .done(function(res){
+          var token=(res&&res.session_token)||(res&&res.token)||((res&&res.data&&res.data.session_token)||(res&&res.data&&res.data.token))||(res&&res.access_token)||'';
+          if(token){
+            try{localStorage.setItem('X-Auth-Token',JSON.stringify(token));localStorage.setItem(AppConfig.storage.tokenKey,JSON.stringify(token));}catch(e){}
+            var u=(res&&res.data)||res||{};
+            try{if(u && u.token_expires!==undefined) localStorage.setItem('token-expires',JSON.stringify(u.token_expires))}catch(e){}
+            state.user={
+              id:u.id,
+              username:u.username,
+              email:u.email,
+              display_name:u.display_name||(u.first_name&&u.last_name?(u.first_name+' '+u.last_name):(u.username||'')),
+              first_name:u.first_name,
+              last_name:u.last_name
+            };
+            toast('success','Account created');
+            location.hash='profile';
+          }else{
+            var identifier=username||email;
+            var payload={password:pass,remember:true};
+            if(identifier.indexOf('@')>-1){payload.email=identifier}else{payload.username=identifier}
+            API.authLogin(payload)
+              .done(function(res2){
+                var token2=(res2&&res2.session_token)||(res2&&res2.token)||((res2&&res2.data&&res2.data.session_token)||(res2&&res2.data&&res2.data.token))||(res2&&res2.access_token)||'';
+                if(token2){
+                  try{localStorage.setItem('X-Auth-Token',JSON.stringify(token2));localStorage.setItem(AppConfig.storage.tokenKey,JSON.stringify(token2));}catch(e){}
+                  var u2=(res2&&res2.data)||res2||{};
+                  try{if(u2 && u2.token_expires!==undefined) localStorage.setItem('token-expires',JSON.stringify(u2.token_expires))}catch(e){}
+                  state.user={
+                    id:u2.id,
+                    username:u2.username,
+                    email:u2.email,
+                    display_name:u2.display_name||(u2.first_name&&u2.last_name?(u2.first_name+' '+u2.last_name):(u2.username||'')),
+                    first_name:u2.first_name,
+                    last_name:u2.last_name
+                  };
+                  toast('success','Account created');
+                  location.hash='profile';
+                }else{
+                  toast('success','Account created');
+                  location.hash='login';
+                }
+              })
+              .fail(function(){toast('success','Account created');location.hash='login'});
+          }
+        })
+        .fail(function(){toast('error','Registration failed')});
+    });
+    $(document).on('click','#registerLoginLink',function(e){e.preventDefault();location.hash='login'});
+    $(document).on('click','#editProfile',function(e){e.preventDefault();toast('success','Edit Profile coming soon')});
+    $(document).on('click','#profileSettings',function(e){e.preventDefault();toast('success','Settings coming soon')});
+    $(document).on('click','#navAddresses',function(e){e.preventDefault();toast('success','Addresses management coming soon')});
+    $(document).on('click','#navPayments',function(e){e.preventDefault();toast('success','Payment methods coming soon')});
+    $(document).on('click','#navVouchers',function(e){e.preventDefault();toast('success','Vouchers & offers coming soon')});
+    $(document).on('click','#navNotifications',function(e){e.preventDefault();toast('success','Notifications settings coming soon')});
+    $(document).on('click','#navReviews',function(e){e.preventDefault();toast('success','Reviews management coming soon')});
+    $(document).on('click','#navHelp',function(e){e.preventDefault();toast('success','Help Center coming soon')});
+    $(document).on('click','#navAbout',function(e){e.preventDefault();toast('success','About page coming soon')});
+    $(document).on('click','#navInvite',function(e){e.preventDefault();toast('success','Invite friends coming soon')});
     
     // Scroll event for infinite loading
     $(window).on('scroll', function() {
@@ -2092,6 +2399,43 @@ function heroBanner() {
       <div class="absolute top-0 left-0 w-24 h-24 bg-white/5 rounded-full -translate-x-6 -translate-y-6"></div>
     </div>
   </section>`;
+}
+ 
+function register(){
+  return `
+  <div class="px-4 py-6 max-w-md mx-auto">
+    <div class="rounded-2xl border border-gray-200 bg-white p-4">
+      <h2 class="text-lg font-semibold mb-4">Create Account</h2>
+      <form id="registerForm" class="space-y-3">
+        <div>
+          <label class="text-sm text-gray-700">First Name</label>
+          <input id="regFirstName" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="First name" required/>
+        </div>
+        <div>
+          <label class="text-sm text-gray-700">Last Name</label>
+          <input id="regLastName" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="Last name" required/>
+        </div>
+        <div>
+          <label class="text-sm text-gray-700">Username</label>
+          <input id="regUsername" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="yourusername" required/>
+        </div>
+        <div>
+          <label class="text-sm text-gray-700">Email Address</label>
+          <input id="regEmail" type="email" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="you@example.com" required/>
+        </div>
+        <div>
+          <label class="text-sm text-gray-700">Password</label>
+          <input id="regPassword" type="password" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="••••••••" required/>
+        </div>
+        <div>
+          <label class="text-sm text-gray-700">Confirm Password</label>
+          <input id="regPassword2" type="password" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="••••••••" required/>
+        </div>
+        <button type="submit" class="w-full px-4 py-3 rounded-xl bg-brand text-white hover:bg-brandDark">Create Account</button>
+      </form>
+      <div class="text-center text-sm mt-3">Already have an account? <a href="#" id="registerLoginLink" class="text-brand">Sign in</a></div>
+    </div>
+  </div>`
 }
 
 function categoryChips() {
