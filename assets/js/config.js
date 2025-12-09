@@ -45,7 +45,7 @@ window.AppConfig=(function(){
     var t=window.AppConfig.theme;
     function hexToRgb(h){h=h.replace('#','');if(h.length===3){h=h.split('').map(function(c){return c+c}).join('')}var r=parseInt(h.substring(0,2),16);var g=parseInt(h.substring(2,4),16);var b=parseInt(h.substring(4,6),16);return [r,g,b]}
     var rgb=hexToRgb(t.text).join(' ');
-    var css='\n.bg-brand{background:linear-gradient(135deg,'+t.primaryStart+','+t.primaryEnd+')}\n.text-brand{color:'+t.text+'}\n.hover\\:bg-brandDark:hover{background:linear-gradient(135deg,'+t.hoverStart+','+t.hoverEnd+')}\n.hover\\:text-brandDark:hover{color:'+t.accent+'}\n.from-brand\\/10{--tw-gradient-from: rgb('+rgb+' / 0.1) var(--tw-gradient-from-position); --tw-gradient-to: rgb('+rgb+' / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);}';
+    var css='\n.bg-brand{background:linear-gradient(135deg,'+t.primaryStart+','+t.primaryEnd+')}\n.text-brand{color:'+t.text+'}\n.hover\\:bg-brandDark:hover{background:linear-gradient(135deg,'+t.hoverStart+','+t.hoverEnd+')}\n.hover\\:text-brandDark:hover{color:'+t.accent+'}\n.from-brand\\/10{--tw-gradient-from: rgb('+rgb+' / 0.1) var(--tw-gradient-from-position); --tw-gradient-to: rgb('+rgb+' / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);}\n.no-scrollbar::-webkit-scrollbar{display:none}\n.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}\n.dragging{cursor:grabbing}';
     var el=document.createElement('style');el.setAttribute('data-theme','app');el.innerHTML=css;document.head.appendChild(el);
 })();
 
@@ -93,7 +93,12 @@ window.APIConfig=(function(){
             cartUpdate:'/cart/update',
             cartRemove:'/cart/remove',
             cartClear:'/cart/clear',
-            cartCount:'/cart/count'
+            cartCount:'/cart/count',
+            messagingConversations:'/messaging/conversations',
+            messagingConversationsCreate:'/messaging/conversations',
+            messagingMessagesByConversation:'/messaging/conversations/:id/messages',
+            messagingMessagesSend:'/messaging/conversations/:id/messages',
+            messagingUsers:'/messaging/users'
         }
     }
 })();
@@ -119,7 +124,7 @@ window.API=(function(){
             return t?JSON.parse(t):null
         }catch(e){return null}
     }
-    function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Content-Type':'application/json','Accept':'application/json'};var t=token();if(t) headers['X-Auth-Token']=t;return $.ajax({method:method,url:url,headers:headers,data:opt.body?JSON.stringify(opt.body):null})}
+    function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Accept':'application/json'};var t=token();if(t){headers['X-Auth-Token']=t;headers['Authorization']='Bearer '+t}var ajaxOpts={method:method,url:url,headers:headers};if(opt.formData){ajaxOpts.data=opt.formData;ajaxOpts.processData=false;ajaxOpts.contentType=false}else if(opt.body){var ct=(opt.contentType||'application/json');headers['Content-Type']=ct;ajaxOpts.data=ct==='application/json'?JSON.stringify(opt.body):opt.body}else{headers['Content-Type']='application/json'}return $.ajax(ajaxOpts)}
     function get(endpoint,opt){return req('GET',endpoint,opt)}
     function post(endpoint,opt){return req('POST',endpoint,opt)}
     function put(endpoint,opt){return req('PUT',endpoint,opt)}
@@ -166,5 +171,10 @@ window.API=(function(){
         cartRemove:function(cartItemKey){return del(APIConf.endpoints.cartRemove,{body:{cart_item_key:cartItemKey}})},
         cartClear:function(){return del(APIConf.endpoints.cartClear)},
         cartCount:function(){return get(APIConf.endpoints.cartCount)}
+        ,messagingConversations:function(q){return get(APIConf.endpoints.messagingConversations,{query:q})}
+        ,messagingConversationsCreate:function(body){return post(APIConf.endpoints.messagingConversationsCreate,{body:body})}
+        ,messagingMessages:function(id){return get(APIConf.endpoints.messagingMessagesByConversation,{params:{id:id}})}
+        ,messagingMessagesSend:function(id,bodyOrForm){if(bodyOrForm instanceof FormData){return post(APIConf.endpoints.messagingMessagesSend,{params:{id:id},formData:bodyOrForm})}return post(APIConf.endpoints.messagingMessagesSend,{params:{id:id},body:bodyOrForm})}
+        ,messagingUsers:function(q){return get(APIConf.endpoints.messagingUsers,{query:q})}
     }
 })();

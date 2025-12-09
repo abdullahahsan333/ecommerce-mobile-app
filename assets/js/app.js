@@ -81,6 +81,7 @@ window.formatViewerCount = formatViewerCount;
     vouchersCount: 0,
     notificationsCount: 0
   };
+  state.messagingUsers={sellers:[],customers:[],admins:[]};
   
   function load(k){
     try{
@@ -193,6 +194,7 @@ window.formatViewerCount = formatViewerCount;
     
     var rn = parseFloat(regularPrice);
     var sn = parseFloat(price);
+    var priceNum = parseFloat(product.sale_price || product.price || 0);
     
     if (!isNaN(rn) && !isNaN(sn) && rn > sn) {
       discount = Math.round(((rn - sn) / rn) * 100) + '% OFF';
@@ -201,7 +203,7 @@ window.formatViewerCount = formatViewerCount;
     var rating = parseFloat(product.average_rating || product.rating || 0);
     var stock = product.stock_quantity || 0;
     var stockStatus = product.stock_status || 'instock';
-    var inStock = stockStatus === 'instock' && stock > 0;
+    var inStock = (stockStatus === 'instock') && (stock > 0) && (priceNum > 0);
     var categories = (product.categories || []).map(function(c) { return c.name; }).join(', ');
     var featured = product.featured || false;
     var tags = (product.tags || []).map(function(t) { return t.name; });
@@ -832,7 +834,7 @@ window.formatViewerCount = formatViewerCount;
         });
       API.getWishlist()
         .done(function(res){
-          var raw = (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
+          var raw = (res && res.items) || (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
           var ids = Array.isArray(raw) ? raw.map(function(x){ return typeof x==='object' ? (x.id||x.product_id) : parseInt(x,10); }).filter(function(x){ return !isNaN(x); }) : [];
           state.serverWishlistIds = ids;
           var sum = (res && res.summary) || (res && res.data && res.data.summary) || {};
@@ -871,28 +873,15 @@ window.formatViewerCount = formatViewerCount;
         .fail(function(){ state.ordersList = []; render(); });
     }
     if (state.route === 'chat') {
-      if (!Array.isArray(state.chatThreads) || !state.chatThreads.length) {
-        state.chatThreads=[
-          {id:1,name:'Sara Turqi',role:'sellers',verified:true,online:true,grad:['from-pink-400','to-orange-400'],last:{text:'Thank you for your order! Your bag will be ...',time:'10:30 AM',unread:2}},
-          {id:2,name:'Beauty Zone Store',role:'sellers',online:false,grad:['from-blue-400','to-indigo-400'],last:{text:'Hi! Is this item still available?',time:'Yesterday',unread:0}},
-          {id:3,name:'Customer Support',role:'support',online:false,grad:['from-green-400','to-emerald-400'],last:{text:'Your ticket has been resolved. Thank you!',time:'2 days ago',unread:0}},
-          {id:4,name:"Maria's Fashion",role:'sellers',online:false,grad:['from-red-400','to-rose-400'],last:{text:'📷 Photo',time:'3 days ago',unread:1}}
-        ];
-      }
+      initMessagingMock();
       state.chatTab=state.chatTab||'All';
       render();
     }
     if (state.route === 'chatSingle') {
       var tid=parseInt(state.query.id||'0',10);
+      initMessagingMock();
       state.chatMessages=state.chatMessages||{};
-      if (!Array.isArray(state.chatMessages[tid])) {
-        state.chatMessages[tid]=[
-          {from:'other',text:"Absolutely! 🧧 Once you complete the order, we'll ship it today and you'll receive it within 2-3 business days.",time:'9:37 AM'},
-          {from:'me',text:'Great! Just placed the order 🎉',time:'9:40 AM'},
-          {from:'other',text:"Thank you for your order! Your bag will be shipped today 🎉 You'll receive a tracking number shortly!",time:'10:30 AM'},
-          {from:'me',text:'Hello! I saw your live stream yesterday. The bag looked amazing!',time:'9:32 AM'}
-        ];
-      }
+      state.chatMessages[tid]=state.chatMessages[tid]||[];
       render();
     }
     if (state.route === 'addresses') {
@@ -930,7 +919,7 @@ window.formatViewerCount = formatViewerCount;
       API.getWishlist()
         .done(function(res){
           state.serverWishlist = res || {};
-          var raw = (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
+          var raw = (res && res.items) || (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
           var ids = Array.isArray(raw) ? raw.map(function(x){ return typeof x==='object' ? (x.id||x.product_id) : parseInt(x,10); }).filter(function(x){ return !isNaN(x); }) : [];
           state.serverWishlistIds = ids;
           var sum = (res && res.summary) || (res && res.data && res.data.summary) || {};
@@ -1002,6 +991,20 @@ window.formatViewerCount = formatViewerCount;
         state.data.specialOffers = all.filter(function(p){return p.discount && parseInt(p.discount) >= 30}).slice(0,6);
         state.loading = false;
         if (state.route === 'home' || state.route === 'products') render();
+        API.getWishlist().done(function(res){
+          var raw=(res&&res.items)||(res&&res.wishlist)||(res&&res.data&&res.data.wishlist)||[];
+          var ids=Array.isArray(raw)?raw.map(function(x){return typeof x==='object'?(x.id||x.product_id):parseInt(x,10);}).filter(function(x){return !isNaN(x);}):[];
+          state.serverWishlistIds=ids;
+          var sum=(res&&res.summary)||(res&&res.data&&res.data.summary)||{};
+          state.wishlistCount=(sum&&typeof sum.total_items==='number')?sum.total_items:ids.length;
+          if(state.route==='home'||state.route==='products'||state.route==='product') render();
+        });
+        API.cart().done(function(res){
+          var items=(res&&res.items)||(res&&res.data&&res.data.items)||[];
+          state.cartServer={items:items};
+          state.cartCount=Array.isArray(items)?items.reduce(function(s,i){return s+(parseInt(i.quantity,10)||0);},0):0;
+          if(state.route==='home'||state.route==='products'||state.route==='product') render();
+        }).fail(function(){state.cartServer={items:[]};});
       })
       .fail(function(xhr, status, error) {
         console.error('Failed to load products:', error);
@@ -1134,8 +1137,9 @@ window.formatViewerCount = formatViewerCount;
   }
   
   function productCard(p) {
-    var wl = (state.serverWishlistIds || []).some(function(x){ return x === p.id; }) || state.wishlist.some(function(x) { return x === p.id; });
-    var stockBadge = '';
+  var wl = (state.route==='wishlist') ? true : ((state.serverWishlistIds || []).some(function(x){ return x === p.id; }) || state.wishlist.some(function(x) { return x === p.id; }));
+  var inCart = (state.cartServer && Array.isArray(state.cartServer.items)) ? state.cartServer.items.some(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===p.id; }) : false;
+  var stockBadge = '';
     
     if (!p.inStock) {
       stockBadge = '<span class="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded bg-gray-500 text-white">Out of Stock</span>';
@@ -1146,7 +1150,7 @@ window.formatViewerCount = formatViewerCount;
     return `
       <div class="rounded-xl border border-gray-200 overflow-hidden bg-white flex flex-col gap-2 h-full hover:shadow-md transition-shadow">
         <a href="#product?id=${p.id}" class="block relative">
-          <img src="${p.img}" alt="${p.title}" class="w-full h-40 sm:h-48 object-cover" loading="lazy"/>
+          <img src="${p.img}" alt="${p.title}" class="w-full h-32 sm:h-40 object-cover" loading="lazy"/>
           ${p.discount ? `<span class="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded bg-red-500 text-white">${p.discount}</span>` : ''}
           ${p.featured ? `<span class="absolute top-10 left-2 text-[10px] px-2 py-0.5 rounded bg-purple-500 text-white flex items-center gap-1">${svg('award', 'w-3 h-3')} Featured</span>` : ''}
           ${stockBadge}
@@ -1172,16 +1176,17 @@ window.formatViewerCount = formatViewerCount;
             </div>
           </a>
           <button data-add="${p.id}" 
-                  class="mt-3 w-full px-4 py-2 rounded-lg bg-brand text-white hover:bg-brandDark transition-colors ${!p.inStock ? 'opacity-50 cursor-not-allowed' : ''}"
-                  ${!p.inStock ? 'disabled' : ''}>
-            ${p.inStock ? 'Add to Cart' : 'Out of Stock'}
+                  class="whitespace-nowrap mt-3 w-full px-4 py-2 rounded-lg ${inCart ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-brand text-white hover:bg-brandDark'} transition-colors ${(!p.inStock && !inCart) ? 'opacity-50 cursor-not-allowed' : ''}"
+                  ${(!p.inStock && !inCart) ? 'disabled' : ''}>
+            ${inCart ? 'Remove' : (p.inStock ? 'Add to Cart' : 'Out of Stock')}
           </button>
-        </div>
-      </div>`;
+      </div>
+    </div>`;
   }
   
   function specialOfferCard(p) {
-    var wl = state.wishlist.some(function(x) { return x === p.id; });
+    var wl = (state.serverWishlistIds || []).some(function(x){ return x === p.id; }) || state.wishlist.some(function(x) { return x === p.id; });
+    var inCart = (state.cartServer && Array.isArray(state.cartServer.items)) ? state.cartServer.items.some(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===p.id; }) : false;
     var discountPercentage = p.discount ? parseInt(p.discount) : 0;
     
     return `
@@ -1194,9 +1199,9 @@ window.formatViewerCount = formatViewerCount;
             </div>
           </div>
           <div class="absolute top-3 right-3">
-            <button data-like="${p.id}" class="p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white transition-colors shadow-md">
-              ${svg('heart', 'w-5 h-5 ' + (wl ? 'text-red-500 fill-red-500' : 'text-gray-700'))}
-            </button>
+          <button data-like="${p.id}" class="p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white transition-colors shadow-md">
+            ${svg('heart', 'w-5 h-5 ' + (wl ? 'text-red-500 fill-red-500' : 'text-gray-700'))}
+          </button>
           </div>
           <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
             <div class="text-white font-semibold text-sm line-clamp-1">${p.title}</div>
@@ -1222,12 +1227,12 @@ window.formatViewerCount = formatViewerCount;
             </div>
           </div>
           <button data-add="${p.id}" 
-                  class="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium hover:from-orange-600 hover:to-red-600 transition-all ${!p.inStock ? 'opacity-50 cursor-not-allowed' : ''}"
-                  ${!p.inStock ? 'disabled' : ''}>
-            ${p.inStock ? 'Add to Cart' : 'Out of Stock'}
+                  class="w-full px-4 py-3 rounded-xl ${inCart ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600'} font-medium transition-all ${(!p.inStock && !inCart) ? 'opacity-50 cursor-not-allowed' : ''}"
+                  ${(!p.inStock && !inCart) ? 'disabled' : ''}>
+            ${inCart ? 'Remove' : (p.inStock ? 'Add to Cart' : 'Out of Stock')}
           </button>
-        </div>
-      </div>`;
+      </div>
+    </div>`;
   }
   
   function skeletonCards(n){
@@ -1434,8 +1439,8 @@ window.formatViewerCount = formatViewerCount;
       <div class="px-4 py-6 text-center">
         <div class="text-sm text-gray-600 mb-2">Showing ${list.length} of ${(state.data.allProducts || []).length} products</div>
         <div class="text-gray-500 mb-4">No products found</div>
-        <button id="clearAllFiltersBtn" class="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 mr-2">Clear Filters</button>
-        <a href="#home" class="px-4 py-2 rounded-xl bg-brand text-white">Continue Shopping</a>
+        <button id="clearAllFiltersBtn" class="px-3 py-1 rounded-xl bg-gray-200 text-gray-700 mr-2">Clear Filters</button>
+        <a href="#products" class="whitespace-nowrap px-3 py-1 rounded-xl bg-brand text-white">Continue Shopping</a>
       </div>`;
     }
     
@@ -1524,7 +1529,7 @@ window.formatViewerCount = formatViewerCount;
               <div class="relative flex-1 h-72 sm:h-80 md:h-96 rounded-2xl overflow-hidden border border-gray-200 bg-white">
                 <img src="${(p.images||[p.img])[state.productImageIndex||0]}" alt="${p.title}" class="w-full h-full object-contain"/>
                 <div class="absolute top-3 right-3 flex items-center gap-2">
-                  <button data-like="${p.id}" class="p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white shadow">${svg('heart','w-5 h-5')}</button>
+                  ${ (function(){ var liked=((state.serverWishlistIds||[]).some(function(x){return x===p.id})) || ((Array.isArray(state.wishlist)?state.wishlist:[]).some(function(x){return x===p.id})); return `<button data-like="${p.id}" class="p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white shadow">${svg('heart','w-5 h-5 '+(liked?'text-red-500 fill-red-500':'text-gray-700'))}</button>`; })() }
                   <button id="pdShare" class="p-2 rounded-full bg-white/90 backdrop-blur-sm hover:bg-white shadow">${svg('share','w-5 h-5')}</button>
                 </div>
                 ${p.discount ? `<span class="absolute top-3 left-3 px-3 py-1 rounded-full bg-red-500 text-white text-xs">${p.discount}</span>` : ''}
@@ -1596,8 +1601,7 @@ window.formatViewerCount = formatViewerCount;
             </div>
           </div>
           <div class="flex gap-3">
-            <button id="pdBuyNow" data-id="${p.id}" class="flex-1 px-6 py-3 rounded-xl bg-success text-white hover:bg-green-600">Buy Now</button>
-            <button id="pdAddToCart" data-id="${p.id}" class="flex-1 px-6 py-3 rounded-xl bg-brand text-white hover:bg-brandDark ${!p.inStock ? 'opacity-50 cursor-not-allowed' : ''}" ${!p.inStock ? 'disabled' : ''}>Add to Cart</button>
+            ${ (function(){ var inCart=(state.cartServer && Array.isArray(state.cartServer.items)) ? state.cartServer.items.some(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===p.id; }) : false; var cls=inCart?'bg-red-600 hover:bg-red-700':'bg-brand hover:bg-brandDark'; var disabled=(!p.inStock && !inCart)?'opacity-50 cursor-not-allowed':''; var disAttr=(!p.inStock && !inCart)?'disabled':''; var txt=inCart?'Remove':'Add to Cart'; return `<button id="pdBuyNow" data-id="${p.id}" class="flex-1 px-6 py-3 rounded-xl bg-success text-white hover:bg-green-600">Buy Now</button><button id=\"pdAddToCart\" data-id=\"${p.id}\" class=\"flex-1 px-6 py-3 rounded-xl ${cls} text-white ${disabled}\" ${disAttr}>${txt}</button>`; })() }
           </div>
         </div>
       </div>
@@ -1714,7 +1718,7 @@ window.formatViewerCount = formatViewerCount;
               <div class="flex items-center gap-2">${svg('shield','w-4 h-4 text-brand')}<span>Secure checkout</span></div>
             </div>
           </div>
-          <a href="#home" class="block text-center mt-4 text-brand hover:text-brandDark">Continue Shopping</a>
+          <a href="#products" class="block text-center mt-4 text-brand hover:text-brandDark">Continue Shopping</a>
         </div>
       </div>
       ${relatedCart.length ? `
@@ -2121,17 +2125,41 @@ function chat(){
     <div class="flex items-center gap-2 mb-3 overflow-x-auto">
       ${tabs.map(function(t){var active=t.toLowerCase()===tab;var cls=active?'bg-brand text-white':'bg-gray-100 text-gray-700 hover:bg-gray-200';return `<button data-chat-tab="${t}" class="px-3 py-1.5 rounded-full text-sm ${cls}">${t}</button>`}).join('')}
     </div>
+    <div class="rounded-2xl overflow-hidden border border-gray-200 bg-white mb-3">
+      <div class="px-4 py-2 text-sm font-medium">People</div>
+      <div class="divide-y">
+        ${[].concat((state.messagingUsers&&state.messagingUsers.sellers)||[],(state.messagingUsers&&state.messagingUsers.customers)||[],(state.messagingUsers&&state.messagingUsers.admins)||[]).slice(0,10).map(function(u){
+          var avatar=u.avatar?`<img src="${Assets.api(u.avatar)}" alt="${u.name}" class="w-8 h-8 rounded-full object-cover"/>`:`<div class="w-8 h-8 rounded-full bg-gradient-to-br from-pink-400 to-orange-400"></div>`;
+          var role=(u.role||'').toString();
+          return `
+          <a href="#" data-user-id="${u.id}" data-user-role="${role}" class="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+            <div class="flex items-center gap-3">
+              ${avatar}
+              <div>
+                <div class="text-sm font-medium">${u.name||'User'}</div>
+                <div class="text-xs text-gray-500">${role?role.charAt(0).toUpperCase()+role.slice(1):''}</div>
+              </div>
+            </div>
+            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+          </a>`;
+        }).join('')}
+      </div>
+    </div>
     <div class="rounded-2xl overflow-hidden border border-gray-200 bg-white divide-y">
       ${list.map(function(t){
         var grd=t.grad||['from-pink-400','to-orange-400'];
         var unread=(t.last&&t.last.unread)||0;
         var time=(t.last&&t.last.time)||'';
         var preview=(t.last&&t.last.text)||'';
+        var pool=[].concat((state.messagingUsers&&state.messagingUsers.sellers)||[],(state.messagingUsers&&state.messagingUsers.customers)||[],(state.messagingUsers&&state.messagingUsers.admins)||[]);
+        var user=pool.find(function(u){return u.id===(t.participant_id||0)||u.name===t.name});
+        var avatar=(user&&user.avatar)||'';
+        var avatarEl=avatar?`<img src="${Assets.api(avatar)}" alt="${t.name}" class="w-12 h-12 rounded-full object-cover"/>`:`<div class="w-12 h-12 rounded-full bg-gradient-to-br ${grd[0]} ${grd[1]}"></div>`;
         return `
         <a href="#" data-thread-id="${t.id}" class="block px-4 py-3 hover:bg-gray-50">
           <div class="flex items-start gap-3">
             <div class="relative">
-              <div class="w-12 h-12 rounded-full bg-gradient-to-br ${grd[0]} ${grd[1]}"></div>
+              ${avatarEl}
               ${t.online?`<span class="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-white"></span>`:''}
             </div>
             <div class="flex-1 min-w-0">
@@ -2151,9 +2179,94 @@ function chat(){
   </div>`;
 }
 
+function initMessagingMock(){
+  if(state.messagingUsers && state.messagingUsers.__mockReady) return;
+  var sellers=[
+    {id:101,name:'Sara Turqi',email:'sara@example.com',avatar:'https://i.pravatar.cc/128?u=seller-101',role:'sellers'},
+    {id:102,name:'Beauty Zone Store',email:'beauty@example.com',avatar:'https://i.pravatar.cc/128?u=seller-102',role:'sellers'},
+    {id:103,name:"Maria's Fashion",email:'maria@example.com',avatar:'https://i.pravatar.cc/128?u=seller-103',role:'sellers'},
+    {id:104,name:'Gear Hub',email:'gear@example.com',avatar:'https://i.pravatar.cc/128?u=seller-104',role:'sellers'},
+    {id:105,name:'Urban Trends',email:'urban@example.com',avatar:'https://i.pravatar.cc/128?u=seller-105',role:'sellers'}
+  ];
+  var customers=[
+    {id:201,name:'Alex Kim',email:'alex@example.com',avatar:'https://i.pravatar.cc/128?u=customer-201',role:'customers'},
+    {id:202,name:'Jordan Lee',email:'jordan@example.com',avatar:'https://i.pravatar.cc/128?u=customer-202',role:'customers'},
+    {id:203,name:'Priya Singh',email:'priya@example.com',avatar:'https://i.pravatar.cc/128?u=customer-203',role:'customers'},
+    {id:204,name:'Daniel Ahmed',email:'daniel@example.com',avatar:'https://i.pravatar.cc/128?u=customer-204',role:'customers'},
+    {id:205,name:'Mina Park',email:'mina@example.com',avatar:'https://i.pravatar.cc/128?u=customer-205',role:'customers'}
+  ];
+  var admins=[
+    {id:301,name:'Customer Support',email:'support@example.com',avatar:'https://i.pravatar.cc/128?u=admin-301',role:'admins'},
+    {id:302,name:'Order Desk',email:'orders@example.com',avatar:'https://i.pravatar.cc/128?u=admin-302',role:'admins'},
+    {id:303,name:'Returns Team',email:'returns@example.com',avatar:'https://i.pravatar.cc/128?u=admin-303',role:'admins'}
+  ];
+  state.messagingUsers={sellers:sellers,customers:customers,admins:admins,__mockReady:true};
+  state.chatThreads=[
+    {id:1001,participant_id:101,name:'Sara Turqi',role:'sellers',verified:true,online:true,grad:['from-pink-400','to-orange-400'],last:{text:'Your bag will be shipped today 🎉',time:'10:30 AM',unread:2}},
+    {id:1002,participant_id:102,name:'Beauty Zone Store',role:'sellers',verified:false,online:false,grad:['from-blue-400','to-indigo-400'],last:{text:'Is this item still available?',time:'Yesterday',unread:0}},
+    {id:1003,participant_id:301,name:'Customer Support',role:'support',verified:false,online:true,grad:['from-green-400','to-emerald-400'],last:{text:'Your ticket has been resolved.',time:'2 days ago',unread:0}},
+    {id:1004,participant_id:103,name:"Maria's Fashion",role:'sellers',verified:false,online:false,grad:['from-red-400','to-rose-400'],last:{text:'📷 Photo',time:'3 days ago',unread:1}},
+    {id:1101,participant_id:201,name:'Alex Kim',role:'customers',verified:false,online:true,grad:['from-purple-400','to-pink-400'],last:{text:'Thanks for the quick support!',time:'8:15 AM',unread:0}},
+    {id:1102,participant_id:202,name:'Jordan Lee',role:'customers',verified:false,online:false,grad:['from-cyan-400','to-blue-400'],last:{text:'Can I change my address?',time:'Monday',unread:1}},
+    {id:1201,participant_id:104,name:'Gear Hub',role:'sellers',verified:true,online:false,grad:['from-amber-400','to-orange-400'],last:{text:'New arrivals this week',time:'Yesterday',unread:0}},
+    {id:1301,participant_id:302,name:'Order Desk',role:'support',verified:false,online:true,grad:['from-emerald-400','to-teal-400'],last:{text:'Order confirmed and packed',time:'Today',unread:0}},
+    {id:1302,participant_id:303,name:'Returns Team',role:'support',verified:false,online:false,grad:['from-lime-400','to-green-400'],last:{text:'Return approved',time:'Last week',unread:0}},
+    {id:1103,participant_id:203,name:'Priya Singh',role:'customers',verified:false,online:true,grad:['from-fuchsia-400','to-rose-400'],last:{text:'Loved the bag, thanks!',time:'Yesterday',unread:0}}
+  ];
+  state.chatMessages=state.chatMessages||{};
+  state.chatMessages[1001]=state.chatMessages[1001]||[
+    {from:'other',text:'Absolutely! Once you complete the order, it ships today and arrives within 2–3 business days.',time:'9:37 AM'},
+    {from:'me',text:'Great! Just placed the order 🎉',time:'9:40 AM'},
+    {from:'other',text:'Thank you for your order! Your bag will be shipped today 🎉 You will receive a tracking number shortly!',time:'10:30 AM'},
+    {from:'me',text:'Hello! I saw your live stream yesterday. The bag looked amazing!',time:'9:32 AM'}
+  ];
+  state.chatMessages[1003]=state.chatMessages[1003]||[
+    {from:'me',text:'I need help with tracking my order',time:'11:02 AM'},
+    {from:'other',text:'Sure, share the order number and I will check.',time:'11:04 AM'}
+  ];
+  state.chatMessages[1002]=state.chatMessages[1002]||[
+    {from:'other',text:'Hi! Is this item still available?',time:'Yesterday'},
+    {from:'me',text:'Yes, it is in stock.',time:'Yesterday'},
+    {from:'other',text:'Great, I will place an order.',time:'Yesterday'}
+  ];
+  state.chatMessages[1004]=state.chatMessages[1004]||[
+    {from:'other',text:'📷 Photo',time:'3 days ago'},
+    {from:'me',text:'Looks good! Do you have it in black?',time:'3 days ago'},
+    {from:'other',text:'Yes, black is available.',time:'3 days ago'}
+  ];
+  state.chatMessages[1101]=state.chatMessages[1101]||[
+    {from:'me',text:'Thanks for the quick support!',time:'8:15 AM'},
+    {from:'other',text:'Anytime. Let us know if you need anything else.',time:'8:16 AM'}
+  ];
+  state.chatMessages[1102]=state.chatMessages[1102]||[
+    {from:'me',text:'Can I change my address?',time:'Monday'},
+    {from:'other',text:'Yes, please share the new address.',time:'Monday'},
+    {from:'me',text:'Done. Sent via email.',time:'Monday'}
+  ];
+  state.chatMessages[1201]=state.chatMessages[1201]||[
+    {from:'other',text:'New arrivals this week',time:'Yesterday'},
+    {from:'me',text:'Send me the catalog.',time:'Yesterday'}
+  ];
+  state.chatMessages[1301]=state.chatMessages[1301]||[
+    {from:'other',text:'Order confirmed and packed',time:'Today'},
+    {from:'me',text:'Thanks!',time:'Today'}
+  ];
+  state.chatMessages[1302]=state.chatMessages[1302]||[
+    {from:'other',text:'Return approved',time:'Last week'},
+    {from:'me',text:'Appreciate the help.',time:'Last week'}
+  ];
+  state.chatMessages[1103]=state.chatMessages[1103]||[
+    {from:'other',text:'Loved the bag, thanks!',time:'Yesterday'},
+    {from:'me',text:'Glad you liked it!',time:'Yesterday'}
+  ];
+}
+
 function chatSingle(){
   var tid=parseInt(state.query.id||'0',10);
   var t=(state.chatThreads||[]).find(function(x){return x.id===tid})||{name:'Conversation'};
+  var pool=[].concat((state.messagingUsers&&state.messagingUsers.sellers)||[],(state.messagingUsers&&state.messagingUsers.customers)||[],(state.messagingUsers&&state.messagingUsers.admins)||[]);
+  var u=pool.find(function(x){return x.id===(t.participant_id||0)||x.name===t.name});
+  var avatar=(u&&u.avatar)||'';
   var msgs=(state.chatMessages&&state.chatMessages[tid])||[];
   return `
   <div class="px-4 py-3">
@@ -2161,7 +2274,7 @@ function chatSingle(){
       <div class="flex items-center gap-3">
         <button id="chatBack" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-orange-400"></div>
+          ${avatar?`<img src="${Assets.api(avatar)}" alt="${t.name}" class="w-10 h-10 rounded-full object-cover"/>`:`<div class="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-orange-400"></div>`}
           <div>
             <div class="text-base font-semibold">${t.name} <span class="text-green-600">${t.verified?'✓':''}</span></div>
             <div class="text-xs text-green-600">Active now</div>
@@ -2172,8 +2285,8 @@ function chatSingle(){
         <button class="p-2 rounded-full bg-gray-100">⋯</button>
       </div>
     </div>
-    <div class="flex items-center gap-2 mb-3 overflow-x-auto">
-      ${['Hello','Track my order','Ask a question'].map(function(q){return `<button data-chat-quick="${q}" class="px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-sm hover:bg-gray-200">${q}</button>`}).join('')}
+    <div id="quickChips" class="flex items-center gap-2 mb-3 overflow-x-auto no-scrollbar cursor-grab">
+      ${['Hello','Track my order','Ask a question','Check order status','Return request','Cancel order','Product inquiry','Warranty claim','Payment issue','Shipping delay','Change address','Speak to support'].map(function(q){return `<button data-chat-quick="${q}" class="whitespace-nowrap px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-sm hover:bg-gray-200">${q}</button>`}).join('')}
     </div>
     <div id="chatView" class="space-y-3 min-h-[60vh] pb-24">
       ${msgs.map(function(m){
@@ -2181,21 +2294,25 @@ function chatSingle(){
         var align=mine?'justify-end':'justify-start';
         var bubble=mine?'bg-brand text-white':'bg-white text-gray-800';
         var shadow=mine?'':'shadow-sm border border-gray-200';
+        var content='';
+        if(m.img){ content = `<img src="${m.img}" class="max-w-[220px] rounded-xl"/>`; }
+        else if(Array.isArray(m.files) && m.files.length){ content = `<div class=\"flex flex-wrap gap-1\">${m.files.map(function(f){ var ic=((f.type||'').indexOf('image/')===0)?'🖼️':'📄'; return `<span class=\"inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-[11px]\">${ic}<span class=\"truncate max-w-[140px]\">${f.name}</span></span>`; }).join('')}</div>`; }
+        else { content = `<div class=\"text-sm\">${m.text}</div>`; }
         return `
         <div class="flex ${align} gap-2">
           ${mine?'':`<div class="w-6 h-6 rounded-full bg-blue-200"></div>`}
           <div class="max-w-[75%] px-4 py-2 rounded-2xl ${bubble} ${shadow}">
-            <div class="text-sm">${m.text}</div>
+            ${content}
             <div class="text-[11px] opacity-80 mt-1">${m.time||''}</div>
           </div>
         </div>`;
       }).join('')}
     </div>
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t">
+    <div class="fixed left-0 right-0 bg-white border-t" style="bottom: 55px;padding-bottom: 15px;">
       <div class="px-4 py-3 flex items-center gap-2">
+        <input id="chatFile" type="file" class="hidden" multiple accept="image/*,.pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.tar"/>
         <button id="chatAttach" class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">📎</button>
-        <button id="chatPhoto" class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">📷</button>
-        <input id="chatInput" type="text" class="flex-1 rounded-full border border-gray-300 px-4 py-2" placeholder="Type a message..."/>
+        <textarea id="chatTextarea" rows="1" class="flex-1 rounded-2xl border border-gray-300 px-4 py-2 resize-none" placeholder="Type a message..."></textarea>
         <button id="chatSend" class="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 text-white flex items-center justify-center">➤</button>
       </div>
     </div>
@@ -2335,7 +2452,7 @@ function login(){
       var req = liked ? API.removeWishlist(id) : API.addWishlist(id);
       req.done(function(){
           API.getWishlist().done(function(res){
-            var raw = (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
+            var raw = (res && res.items) || (res && res.wishlist) || (res && res.data && res.data.wishlist) || [];
             var ids = Array.isArray(raw) ? raw.map(function(x){ return typeof x==='object' ? (x.id||x.product_id) : parseInt(x,10); }).filter(function(x){ return !isNaN(x); }) : [];
             state.serverWishlistIds = ids;
             toast('success', liked ? 'Removed from wishlist' : 'Added to wishlist');
@@ -2345,23 +2462,41 @@ function login(){
         .fail(function(){ toast('error','Wishlist update failed'); });
     });
     
-    // Add to cart (server cart)
+    // Add or remove cart (server cart)
     $(document).on('click', '[data-add]', function(e) {
       e.stopPropagation();
       var id = parseInt($(this).attr('data-add'), 10);
       var product = (state.data.allProducts || []).find(function(p) { return p.id === id; });
-      if (!product || !product.inStock) { toast('error','Product is out of stock'); return; }
-      API.cartAdd(id,1)
-        .done(function(){
-          API.cart().done(function(res){
-            var items = (res && res.items) || (res && res.data && res.data.items) || [];
-            state.cartServer = { items: items };
-            state.cartCount = items.reduce(function(s,i){ return s + (parseInt(i.quantity,10)||0); }, 0);
-            toast('success','Added to cart');
-            render();
-          });
-        })
-        .fail(function(){ toast('error','Failed to add to cart'); });
+      var inCart = (state.cartServer && Array.isArray(state.cartServer.items)) ? state.cartServer.items.some(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===id; }) : false;
+      if (inCart) {
+        var item = (state.cartServer.items || []).find(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===id; });
+        var key = item && (item.cart_item_key || item.key);
+        if (!key) { toast('error','Cannot remove item'); return; }
+        API.cartRemove(key)
+          .done(function(){
+            API.cart().done(function(res){
+              var items = (res && res.items) || (res && res.data && res.data.items) || [];
+              state.cartServer = { items: items };
+              state.cartCount = items.reduce(function(s,i){ return s + (parseInt(i.quantity,10)||0); }, 0);
+              toast('success','Removed from cart');
+              render();
+            });
+          })
+          .fail(function(){ toast('error','Failed to remove from cart'); });
+      } else {
+        if (!product || !product.inStock) { toast('error','Product is out of stock'); return; }
+        API.cartAdd(id,1)
+          .done(function(){
+            API.cart().done(function(res){
+              var items = (res && res.items) || (res && res.data && res.data.items) || [];
+              state.cartServer = { items: items };
+              state.cartCount = items.reduce(function(s,i){ return s + (parseInt(i.quantity,10)||0); }, 0);
+              toast('success','Added to cart');
+              render();
+            });
+          })
+          .fail(function(){ toast('error','Failed to add to cart'); });
+      }
     });
     
     // Remove from cart (server cart)
@@ -2974,13 +3109,18 @@ function login(){
       else{try{navigator.clipboard.writeText(url);toast('success','Link copied')}catch(_){toast('success','Share this link: '+url)}}
     });
     $(document).on('click','[data-thread-id]',function(e){e.preventDefault();var id=parseInt($(this).attr('data-thread-id'),10)||0;if(id) location.hash='chatSingle?id='+id});
+    $(document).on('click','[data-user-id]',function(e){e.preventDefault();var id=parseInt($(this).attr('data-user-id'),10)||0;var role=($(this).attr('data-user-role')||'').replace('sellers','seller').replace('customers','customer');if(!id) return;initMessagingMock();var existing=(state.chatThreads||[]).find(function(c){return c.participant_id===id});if(existing){location.hash='chatSingle?id='+existing.id;return;}var name='Conversation';var u=[].concat(state.messagingUsers.sellers,state.messagingUsers.customers,state.messagingUsers.admins).find(function(x){return x.id===id});if(u) name=u.name;var newId=((state.chatThreads||[]).reduce(function(m,c){return Math.max(m,c.id||0)},1000))+1;var thr={id:newId,name:name,role:role==='seller'?'sellers':(role==='customer'?'customers':'support'),participant_id:id,verified:false,online:true,grad:['from-pink-400','to-orange-400'],last:{text:'Say hello',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),unread:0}};state.chatThreads=(state.chatThreads||[]).concat([thr]);state.chatMessages=state.chatMessages||{};state.chatMessages[newId]=[];location.hash='chatSingle?id='+newId;});
     $(document).on('click','[data-chat-tab]',function(){state.chatTab=$(this).attr('data-chat-tab');render()});
     $(document).on('click','#chatBack',function(e){e.preventDefault();location.hash='chat'});
-    $(document).on('click','[data-chat-quick]',function(e){e.preventDefault();var txt=$(this).attr('data-chat-quick');if(txt==='Track my order'){$('#chatInput').val('Track my order').focus();return;}var tid=parseInt((state.query&&state.query.id)||'0',10);state.chatMessages=state.chatMessages||{};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([{from:'me',text:txt,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}]);render();setTimeout(function(){var reply={from:'other',text:'Thanks! We\'ll get back to you shortly.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([reply]);render()},800)});
-    $(document).on('click','#chatSend',function(){var tid=parseInt((state.query&&state.query.id)||'0',10);var val=$('#chatInput').val()||'';if(!val.trim()) return;state.chatMessages=state.chatMessages||{};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([{from:'me',text:val.trim(),time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}]);$('#chatInput').val('');render();setTimeout(function(){var reply={from:'other',text:'Got it! We\'ll reply shortly.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([reply]);render()},900)});
-    $(document).on('keydown','#chatInput',function(e){if(e.key==='Enter'){e.preventDefault();$('#chatSend').trigger('click')}});
-    $(document).on('click','#chatAttach',function(){toast('success','Attachment added (demo)')});
-    $(document).on('click','#chatPhoto',function(){var tid=parseInt((state.query&&state.query.id)||'0',10);state.chatMessages=state.chatMessages||{};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([{from:'me',text:'📷 Photo',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}]);render();});
+    $(document).on('click','[data-chat-quick]',function(e){e.preventDefault();var txt=$(this).attr('data-chat-quick')||'';$('#chatTextarea').val(txt).focus();});
+    $(document).on('click','#chatSend',function(){var tid=parseInt((state.query&&state.query.id)||'0',10);var val=$('#chatTextarea').val()||'';if(!val.trim()) return;state.chatMessages=state.chatMessages||{};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([{from:'me',text:val.trim(),time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}]);$('#chatTextarea').val('');render();setTimeout(function(){var reply={from:'other',text:'Got it! We\'ll reply shortly.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})};state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat([reply]);render()},900)});
+    $(document).on('keydown','#chatTextarea',function(e){if(e.key==='Enter' && !e.shiftKey){e.preventDefault();$('#chatSend').trigger('click')}});
+    $(document).on('click','#chatAttach',function(){ $('#chatFile').trigger('click') });
+    $(document).on('change','#chatFile',function(){var tid=parseInt((state.query&&state.query.id)||'0',10);var files=this.files||[];if(!files.length) return;state.chatMessages=state.chatMessages||{};var list=[];Array.prototype.forEach.call(files,function(f){if((f.type||'').indexOf('image/')===0){var url=URL.createObjectURL(f);list.push({from:'me',img:url,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});}else{list.push({from:'me',files:[{name:f.name,type:f.type,size:f.size}],time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});}});state.chatMessages[tid]=(state.chatMessages[tid]||[]).concat(list);render();});
+    $(document).on('pointerdown touchstart','#quickChips',function(e){var $el=$(this);var clientX=e.clientX||((e.touches&&e.touches[0])?e.touches[0].clientX:null);if(clientX==null) return;$el.data('dragging',true);$el.data('startX',clientX);$el.data('scrollLeft',this.scrollLeft);$el.addClass('dragging');e.preventDefault()});
+    $(document).on('pointermove touchmove','#quickChips',function(e){var $el=$(this);if(!$el.data('dragging')) return;var clientX=e.clientX||((e.touches&&e.touches[0])?e.touches[0].clientX:null);if(clientX==null) return;var dx=clientX-($el.data('startX')||0);this.scrollLeft=($el.data('scrollLeft')||0)-dx});
+    function endQuickChipsDrag(){var $el=$(this);$el.data('dragging',false);$el.removeClass('dragging')}
+    $(document).on('pointerup pointerleave touchend touchcancel','#quickChips',endQuickChipsDrag);
   $(document).on('click','[data-faq-toggle]',function(){
       var id=$(this).attr('data-faq-id');
       var body=$('#faq-'+id);
@@ -3122,22 +3262,43 @@ function login(){
     });
     $(document).on('click', '#pdAddToCart', function(){
       var id = parseInt($(this).attr('data-id'), 10);
-      var q = state.productQty || 1;
-      for (var i = 0; i < q; i++) {
-        state.cart.push(id);
+      var inCart = (state.cartServer && Array.isArray(state.cartServer.items)) ? state.cartServer.items.some(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===id; }) : false;
+      if (inCart) {
+        var item = (state.cartServer.items || []).find(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===id; });
+        var key = item && (item.cart_item_key || item.key);
+        if (!key) { toast('error','Cannot remove item'); return; }
+        API.cartRemove(key)
+          .done(function(){
+            API.cart().done(function(res){
+              var items=(res&&res.items)||(res&&res.data&&res.data.items)||[];
+              state.cartServer={items:items};
+              state.cartCount=Array.isArray(items)?items.reduce(function(s,i){return s+(parseInt(i.quantity,10)||0);},0):0;
+              toast('success','Removed from cart');
+              render();
+            });
+          })
+          .fail(function(){ toast('error','Failed to remove from cart'); });
+      } else {
+        var q = state.productQty || 1;
+        API.cartAdd(id,q)
+          .done(function(){
+            API.cart().done(function(res){
+              var items=(res&&res.items)||(res&&res.data&&res.data.items)||[];
+              state.cartServer={items:items};
+              state.cartCount=Array.isArray(items)?items.reduce(function(s,i){return s+(parseInt(i.quantity,10)||0);},0):0;
+              toast('success','Added to cart');
+              render();
+            });
+          })
+          .fail(function(){ toast('error','Failed to add to cart'); });
       }
-      save(AppConfig.storage.cartKey, state.cart);
-      toast('success', 'Added to cart');
-      render();
     });
     $(document).on('click', '#pdBuyNow', function(){
       var id = parseInt($(this).attr('data-id'), 10);
       var q = state.productQty || 1;
-      for (var i = 0; i < q; i++) {
-        state.cart.push(id);
-      }
-      save(AppConfig.storage.cartKey, state.cart);
-      location.hash = 'cart';
+      API.cartAdd(id,q)
+        .done(function(){ location.hash='cart'; })
+        .fail(function(){ toast('error','Failed to add to cart'); });
     });
     $(document).on('click', '#pdShare', function(){
       var url = location.href;
