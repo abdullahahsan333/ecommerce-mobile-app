@@ -82,6 +82,8 @@ window.formatViewerCount = formatViewerCount;
     notificationsCount: 0
   };
   state.messagingUsers={sellers:[],customers:[],admins:[]};
+  state.siteInfo=null;
+  state.offerBanner='';
   
   function load(k){
     try{
@@ -105,8 +107,7 @@ window.formatViewerCount = formatViewerCount;
       <header class="sticky top-0 z-30 bg-white border-b border-gray-200">
         <div class="flex items-center justify-between px-4 py-3">
           <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-full bg-brand"></div>
-            <span class="font-semibold">${AppConfig.appName}</span>
+            <img id="headerLogo" src="${Assets.local('assets/img/placeholder.png')}" alt="Logo" class="w-28 rounded object-cover"/>
           </div>
           <button id="searchBtn" class="p-2 text-gray-700">${svg('search','w-6 h-6')}</button>
         </div>
@@ -120,10 +121,12 @@ window.formatViewerCount = formatViewerCount;
     
     var footer = `
       <nav id="bottomNav" class="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200">
-        <div class="relative">
-          <div class="grid grid-cols-4 text-xs">
+          <div class="grid grid-cols-5 text-xs">
             <a href="#home" data-tab="home" class="flex flex-col items-center py-2 text-gray-600">${svg('home','w-6 h-6')}<span>Home</span></a>
             <a href="#chat" data-tab="chat" class="flex flex-col items-center py-2 text-gray-600">${svg('chat','w-6 h-6')}<span>Chat</span></a>
+            <div class="relative">
+              <button id="fabBtn" class="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full text-white shadow-lg flex items-center justify-center bg-brand">${svg('plus','w-6 h-6')}</button>
+            </div>
             <a href="#cart" data-tab="cart" class="flex flex-col items-center py-2 text-gray-600 relative">
               ${svg('cart','w-6 h-6')}
               <span>Cart</span>
@@ -131,8 +134,6 @@ window.formatViewerCount = formatViewerCount;
             </a>
             <a href="#profile" data-tab="profile" class="flex flex-col items-center py-2 text-gray-600">${svg('user','w-6 h-6')}<span>Profile</span></a>
           </div>
-          <button id="fabBtn" class="absolute -top-6 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full text-white shadow-lg flex items-center justify-center bg-brand">${svg('plus','w-6 h-6')}</button>
-        </div>
       </nav>`;
     
     var modal = `
@@ -140,7 +141,7 @@ window.formatViewerCount = formatViewerCount;
         <div class="absolute inset-0 ${AppConfig.ui.modalBackdrop}"></div>
         <div class="relative bg-white rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
           <div class="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 class="font-semibold">Quick View</h3>
+            <h3 id="modalTitle" class="font-semibold">Modal</h3>
             <button id="modalClose" class="p-2">✕</button>
           </div>
           <div id="modalBody" class="p-4"></div>
@@ -180,7 +181,9 @@ window.formatViewerCount = formatViewerCount;
   }
   
   function formatProductData(product) {
-    var raw = (product.images && product.images.main && product.images.main.src) || 
+    var raw = (product.thumbnail) ||
+              (product.images && product.images.thumbnail && (product.images.thumbnail.src || product.images.thumbnail)) || 
+              (product.images && product.images.main && product.images.main.src) || 
               product.image || 
               (Array.isArray(product.images) && product.images[0] && product.images[0].src) || 
               product.thumb || 
@@ -769,8 +772,17 @@ window.formatViewerCount = formatViewerCount;
     }, AppConfig.ui.toastDuration);
   }
   
-  function modal(html) {
+  function modal(html, title) {
     $('#modalBody').html(html);
+    var t = title;
+    if (!t) {
+      try {
+        var tmp = $('<div>').html(html);
+        var guess = tmp.find('h1, h2, h3, .text-lg.font-semibold').first().text().trim();
+        if (guess) t = guess;
+      } catch (_) {}
+    }
+    $('#modalTitle').text(t || 'Modal');
     $('#modal').removeClass('hidden').addClass('flex');
   }
   
@@ -798,6 +810,10 @@ window.formatViewerCount = formatViewerCount;
     state.query = q;
     var tkn=null;try{var t1=localStorage.getItem('X-Auth-Token');var t=t1||localStorage.getItem(AppConfig.storage.tokenKey);if(t){try{tkn=JSON.parse(t)}catch(_){tkn=t}}}catch(e){}
     if (state.route === 'profile' && !tkn) {
+      state.route = 'login';
+    }
+    if (state.route === 'cart' && !tkn) {
+      state.nextRoute = 'cart';
       state.route = 'login';
     }
     if (state.route === 'profile' && tkn) {
@@ -863,6 +879,36 @@ window.formatViewerCount = formatViewerCount;
         })
         .fail(function(){ state.cartServer = { items: [] }; state.cartCount = 0; render(); });
     }
+    if (state.route === 'checkout') {
+      API.cart()
+        .done(function(res){
+          var items = (res && res.items) || (res && res.data && res.data.items) || [];
+          state.cartServer = { items: items };
+          state.cartCount = Array.isArray(items) ? items.reduce(function(s,i){ return s + (parseInt(i.quantity,10)||0); }, 0) : 0;
+          render();
+        })
+        .fail(function(){ state.cartServer = { items: [] }; state.cartCount = 0; render(); });
+      API.addresses()
+        .done(function(res){
+          var raw = (res && res.data) || res || {};
+          var arr = (raw && raw.addresses && Array.isArray(raw.addresses)) ? raw.addresses : (Array.isArray(res) ? res : []);
+          var hasObj = raw && (raw.billing || raw.shipping);
+          if (hasObj) {
+            state.addressesData = {
+              billing: raw.billing || {},
+              shipping: raw.shipping || {},
+              default_billing: raw.default_billing || '',
+              default_shipping: raw.default_shipping || ''
+            };
+          } else {
+            var b = (arr.find(function(x){ return (x.type||'').toLowerCase()==='billing'; }) || {});
+            var s = (arr.find(function(x){ return (x.type||'').toLowerCase()==='shipping'; }) || {});
+            state.addressesData = { billing: b, shipping: s, default_billing: b && b.is_default ? 'billing' : '', default_shipping: s && s.is_default ? 'shipping' : '' };
+          }
+          render();
+        })
+        .fail(function(){ state.addressesData = { billing:{}, shipping:{}, default_billing:'', default_shipping:'' }; render(); });
+    }
     if (state.route === 'orders') {
       API.orders()
         .done(function(res){
@@ -871,6 +917,20 @@ window.formatViewerCount = formatViewerCount;
           render();
         })
         .fail(function(){ state.ordersList = []; render(); });
+    }
+    if (state.route === 'order') {
+      var oid = parseInt((state.query && state.query.id) || '0', 10);
+      if (oid) {
+        API.orderById(oid)
+          .done(function(res){
+            state.orderDetails = (res && res.data) || res || {};
+            render();
+          })
+          .fail(function(){ state.orderDetails = {}; render(); });
+      } else {
+        state.orderDetails = {};
+        render();
+      }
     }
     if (state.route === 'chat') {
       initMessagingMock();
@@ -937,6 +997,11 @@ window.formatViewerCount = formatViewerCount;
           render();
         })
         .fail(function(){ state.reviewsList = []; render(); });
+    }
+    if (state.route === 'about') {
+      API.siteInfo()
+        .done(function(res){ state.siteInfo = res || {}; render(); })
+        .fail(function(){ state.siteInfo = {}; render(); });
     }
     render();
   }
@@ -1026,7 +1091,8 @@ window.formatViewerCount = formatViewerCount;
         var cats=items.map(function(c){
           var name=c.name||c.title||c.category_name||'';
           var slug=c.slug|| (name? name.toLowerCase().replace(/\s+/g,'-'): '');
-          return {name:name,slug:slug};
+          var img=((c.image&&((c.image.src)||c.image))||'');
+          return {name:name,slug:slug,img:img};
         }).filter(function(c){return c.name});
         state.categories=cats;
         window.categories=cats;
@@ -1256,6 +1322,7 @@ window.formatViewerCount = formatViewerCount;
     return `
       <div class="min-h-screen">
         ${heroBanner()}
+        ${(state.offerBanner&&state.offerBanner.length)?`<section class="px-4 pt-3"><img src="${Assets.api(state.offerBanner)}" class="w-full rounded-2xl object-cover" alt="Offer"/></section>`:''}
         ${categoryChips()}
         ${state.loading ? `
           <section class="px-4 py-4">${skeletonCards(8)}</section>
@@ -1619,7 +1686,7 @@ window.formatViewerCount = formatViewerCount;
           </div>
         </div>
         <div id="pTab_reviews" class="px-4 py-3 hidden">
-          <div class="text-gray-600">No reviews yet</div>
+          ${function(){var t=null;try{var t1=localStorage.getItem('X-Auth-Token');var tt=t1||localStorage.getItem(AppConfig.storage.tokenKey);if(tt){try{t=JSON.parse(tt)}catch(_){t=tt}}}catch(e){} return t?`<div class="flex items-center justify-between mb-3"><div class="text-gray-700">Reviews</div><button id="addReviewBtn" data-product-id="${p.id}" class="px-3 py-1.5 rounded-xl bg-brand text-white">Add Review</button></div>`:`<div class="text-gray-600">No reviews yet</div>`;}()}
         </div>
         <div id="pTab_shipping" class="px-4 py-3 hidden">
           <div class="text-sm font-semibold mb-2">Free Shipping</div>
@@ -1649,7 +1716,7 @@ window.formatViewerCount = formatViewerCount;
       var priceNum = parseFloat(i.price || i.line_total || i.total || 0);
       var qty = parseInt(i.quantity,10) || 1;
       var title = i.name || i.product_name || '';
-      var rawImg = i.medium_image || i.image_medium || (i.images && i.images.medium && (i.images.medium.src || i.images.medium)) || i.image || (Array.isArray(i.images) ? i.images[0] : '') || '';
+      var rawImg = i.thumbnail || (i.images && i.images.thumbnail && (i.images.thumbnail.src || i.images.thumbnail)) || i.medium_image || i.image_medium || (i.images && i.images.medium && (i.images.medium.src || i.images.medium)) || i.image || (Array.isArray(i.images) ? i.images[0] : '') || '';
       var img = rawImg ? Assets.api(rawImg) : Assets.local('assets/img/placeholder.png');
       var key = i.cart_item_key || i.key || '';
       var priceDisp = priceNum ? ('$' + priceNum.toFixed(2)) : (i.price || '');
@@ -1659,7 +1726,7 @@ window.formatViewerCount = formatViewerCount;
       return `
       <div class="px-4 py-6 text-center">
         <div class="text-gray-500 mb-4">Your cart is empty</div>
-        <a href="#home" class="px-4 py-2 rounded-xl bg-brand text-white">Start Shopping</a>
+        <a href="#products" class="px-4 py-2 rounded-xl bg-brand text-white">Start Shopping</a>
       </div>`;
     }
     var total = items.reduce(function(sum, item){ return sum + (item.priceNum * item.quantity); }, 0);
@@ -1726,6 +1793,70 @@ window.formatViewerCount = formatViewerCount;
         ${relatedProductsHeader(firstSlug)}
         ${buildSlider('cartRelatedSlider', buildCardItems(relatedCart.slice(0,20), 2), 2)}
       </section>` : ''}
+    </div>`;
+  }
+
+  function checkout(){
+    var d = state.addressesData || {};
+    var billing = d.billing || {};
+    var shipping = d.shipping || {};
+    var items = ((state.cartServer||{}).items||[]).map(function(i){
+      var qty = parseInt(i.quantity,10)||1;
+      var title = i.name || i.product_name || '';
+      var priceNum = parseFloat(i.price || i.line_total || i.total || 0);
+      var img = Assets.api((i.thumbnail || (i.images&&i.images.thumbnail&&(i.images.thumbnail.src||i.images.thumbnail)) || i.medium_image || i.image_medium || (i.images&&i.images.medium&&i.images.medium.src) || i.image || (Array.isArray(i.images)?i.images[0]:'') || ''));
+      return { title:title, qty:qty, priceNum:priceNum, img:img };
+    });
+    var total = items.reduce(function(sum, it){ return sum + (it.priceNum * it.qty); }, 0);
+    function addrCard(a,label){
+      var name = ((a.first_name||'') + ' ' + (a.last_name||'')).trim() || (a.company||'');
+      var line1 = a.address_1 || '';
+      var line2 = a.address_2 || '';
+      var city = a.city || '';
+      var state = a.state || '';
+      var postcode = a.postcode || '';
+      var country = a.country || '';
+      var phone = a.phone || '';
+      var email = a.email || '';
+      return `
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <div class="text-xs font-semibold mb-1">${label}</div>
+        ${name?`<div class="text-sm font-medium">${name}</div>`:''}
+        <div class="text-xs text-gray-600">${[line1,line2,city,state,postcode,country].filter(Boolean).join(', ')}</div>
+        ${phone?`<div class="text-xs text-gray-600 mt-1">${phone}</div>`:''}
+        ${email?`<div class="text-xs text-gray-600">${email}</div>`:''}
+        <div class="mt-2"><a href="#addresses" class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">Change</a></div>
+      </div>`;
+    }
+    var list = items.map(function(p){
+      return `
+      <div class="flex items-center gap-3 p-3 border-b border-gray-200">
+        <img src="${p.img}" class="w-14 h-14 object-cover rounded-lg" alt="${p.title}"/>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium truncate">${p.title}</div>
+          <div class="text-xs text-gray-600">Qty: ${p.qty}</div>
+        </div>
+        <div class="text-sm font-semibold">$${(p.priceNum * p.qty).toFixed(2)}</div>
+      </div>`;
+    }).join('');
+    return `
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200">
+        <h2 class="text-lg font-semibold">Checkout</h2>
+      </div>
+      <div class="p-4 grid grid-cols-1 gap-3">
+        ${Object.keys(shipping).length ? addrCard(shipping,'SHIPPING') : `<div class="rounded-xl border border-gray-200 bg-white p-4"><div class="text-sm">No shipping address</div><div class="mt-2"><a href="#addresses" class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">Add Shipping</a></div></div>`}
+        ${Object.keys(billing).length ? addrCard(billing,'BILLING') : `<div class="rounded-xl border border-gray-200 bg-white p-4"><div class="text-sm">No billing address</div><div class="mt-2"><a href="#addresses" class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">Add Billing</a></div></div>`}
+      </div>
+      <div class="rounded-2xl border border-gray-200 bg-white mx-4">${list}</div>
+      <div class="p-4">
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+          <div class="text-base font-semibold mb-3">Order Summary</div>
+          <div class="flex items-center justify-between text-sm mb-2"><span>Items</span><span class="font-medium">${items.reduce(function(s,i){return s+i.qty},0)}</span></div>
+          <div class="flex items-center justify-between mb-3"><span class="text-sm">Total</span><span class="text-2xl font-bold">$${total.toFixed(2)}</span></div>
+          <button id="placeOrder" class="w-full px-4 py-3 rounded-xl bg-brand text-white hover:bg-brandDark transition-colors">Place Order</button>
+        </div>
+      </div>
     </div>`;
   }
   
@@ -1905,10 +2036,15 @@ function profile() {
       </div>`;
     }
     return `
-    <div class="px-4 py-3">
-      <h2 class="text-lg font-semibold mb-4">My Wishlist</h2>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        ${items.map(function(p){ return productCard(p); }).join('')}
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">My Wishlist</h2>
+      </div>
+      <div class="px-4 py-3">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          ${items.map(function(p){ return productCard(p); }).join('')}
+        </div>
       </div>
     </div>`;
   }
@@ -1920,26 +2056,107 @@ function profile() {
       <div class="px-4 py-6">
         <h2 class="text-lg font-semibold mb-4">My Orders</h2>
         <div class="text-center text-gray-500 py-8">No orders yet</div>
-        <a href="#home" class="block text-center px-4 py-2 rounded-xl bg-brand text-white">Start Shopping</a>
+        <a href="#products" class="block text-center px-4 py-2 rounded-xl bg-brand text-white">Start Shopping</a>
       </div>`;
     }
     return `
-    <div class="px-4 py-6">
-      <h2 class="text-lg font-semibold mb-4">My Orders</h2>
-      <div class="space-y-3">
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">My Orders</h2>
+      </div>
+      <div class="px-4 py-3 space-y-3">
         ${items.map(function(o){
           var id = o.id || o.order_id || '';
           var status = o.status || (o.order_status || '').toString();
           var total = (o.total || o.order_total || '').toString();
           return `
-          <div class="rounded-xl border border-gray-200 bg-white p-4 flex items-center justify-between">
+          <a href="#order?id=${id}" data-order-id="${id}" class="rounded-xl border border-gray-200 bg-white p-4 flex items-center justify-between hover:bg-gray-50">
             <div>
               <div class="text-sm font-semibold">Order #${id}</div>
               <div class="text-xs text-gray-500">${status}</div>
             </div>
             <div class="text-sm font-semibold">${total}</div>
-          </div>`;
+          </a>`;
         }).join('')}
+      </div>
+    </div>`;
+  }
+
+  function order(){
+    var id = parseInt((state.query && state.query.id) || '0', 10);
+    var o = state.orderDetails || {};
+    var oid = o.id || o.order_id || id;
+    var status = o.status || (o.order_status || '').toString();
+    var dt = o.date_created || o.created_at || '';
+    var items = (o.items || o.line_items || []).map(function(i){
+      var title = i.name || i.product_name || '';
+      var qty = parseInt(i.quantity,10)||1;
+      var unit = parseFloat(i.price || i.unit_price || i.regular_price || i.sale_price || 0) || 0;
+      var lt = parseFloat(i.total || i.line_total || i.subtotal || i.line_subtotal || 0) || 0;
+      if (!lt) lt = unit * qty;
+      var img = i.thumbnail || (i.images && i.images.thumbnail && (i.images.thumbnail.src||i.images.thumbnail)) || (i.image && (i.image.src||i.image)) || (i.images && i.images.medium && (i.images.medium.src||i.images.medium)) || '';
+      var dispImg = img ? Assets.api(img) : Assets.local('assets/img/placeholder.png');
+      return { title:title, qty:qty, unitPrice:unit, lineTotal:lt, img:dispImg };
+    });
+    var totals = o.totals || {};
+    var itemsSubtotal = items.reduce(function(s,i){return s+(i.lineTotal||0);},0);
+    var shippingTotal = parseFloat((totals.shipping_total||totals.shipping||o.shipping_total||0)) || 0;
+    var taxTotal = parseFloat((totals.total_tax||totals.tax||o.total_tax||0)) || 0;
+    var grandTotalRaw = parseFloat((totals.total||o.total||0));
+    var grandTotal = (!isNaN(grandTotalRaw) && grandTotalRaw>0) ? grandTotalRaw : (itemsSubtotal + shippingTotal + taxTotal);
+    var shipping = o.shipping || o.shipping_address || {};
+    var billing = o.billing || o.billing_address || {};
+    function addrCard(a,label){
+      var name = ((a.first_name||'') + ' ' + (a.last_name||'')).trim() || (a.company||'');
+      var line1 = a.address_1 || '';
+      var line2 = a.address_2 || '';
+      var city = a.city || '';
+      var state = a.state || '';
+      var postcode = a.postcode || '';
+      var country = a.country || '';
+      var phone = a.phone || '';
+      var email = a.email || '';
+      return `
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <div class="text-xs font-semibold mb-1">${label}</div>
+        ${name?`<div class="text-sm font-medium">${name}</div>`:''}
+        <div class="text-xs text-gray-600">${[line1,line2,city,state,postcode,country].filter(Boolean).join(', ')}</div>
+        ${phone?`<div class="text-xs text-gray-600 mt-1">${phone}</div>`:''}
+        ${email?`<div class="text-xs text-gray-600">${email}</div>`:''}
+      </div>`;
+    }
+    var list = items.map(function(p){
+      return `
+      <div class="flex items-center gap-3 p-3 border-b border-gray-200">
+        <img src="${p.img}" class="w-14 h-14 object-cover rounded-lg" alt="${p.title}"/>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium truncate">${p.title}</div>
+          <div class="text-xs text-gray-600">Price: $${(p.unitPrice||0).toFixed(2)} • Qty: ${p.qty}</div>
+        </div>
+        <div class="text-sm font-semibold">$${(p.lineTotal||0).toFixed(2)}</div>
+      </div>`;
+    }).join('');
+    return `
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button id="orderBack" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">Order #${oid}</h2>
+      </div>
+      <div class="px-4 py-2 text-xs text-gray-600">${status}${dt?` • ${dt}`:''}</div>
+      <div class="p-4 grid grid-cols-1 gap-3">
+        ${Object.keys(shipping||{}).length ? addrCard(shipping,'SHIPPING') : ''}
+        ${Object.keys(billing||{}).length ? addrCard(billing,'BILLING') : ''}
+      </div>
+      <div class="rounded-2xl border border-gray-200 bg-white mx-4">${list}</div>
+      <div class="p-4">
+        <div class="rounded-2xl border border-gray-200 bg-white p-4">
+          <div class="text-base font-semibold mb-3">Order Summary</div>
+          <div class="flex items-center justify-between text-sm mb-2"><span>Items Subtotal</span><span class="font-medium">$${itemsSubtotal.toFixed(2)}</span></div>
+          <div class="flex items-center justify-between text-sm mb-2"><span>Shipping</span><span class="font-medium">$${shippingTotal.toFixed(2)}</span></div>
+          <div class="flex items-center justify-between text-sm mb-2"><span>Tax</span><span class="font-medium">$${taxTotal.toFixed(2)}</span></div>
+          <div class="flex items-center justify-between"><span class="text-sm">Grand Total</span><span class="text-2xl font-bold">$${grandTotal.toFixed(2)}</span></div>
+        </div>
       </div>
     </div>`;
   }
@@ -1947,16 +2164,25 @@ function profile() {
     var items = state.reviewsList || [];
     if (!items.length) {
       return `
-      <div class="px-4 py-6">
-        <h2 class="text-lg font-semibold mb-4">My Reviews</h2>
-        <div class="text-center text-gray-500 py-8">No reviews found</div>
-        <a href="#home" class="block text-center px-4 py-2 rounded-xl bg-brand text-white">Browse Products</a>
+      <div>
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+          <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+          <h2 class="text-lg font-semibold">My Reviews</h2>
+        </div>
+        <div class="px-4 py-6">
+          <div class="text-center text-gray-500 py-8">No reviews found</div>
+          <a href="#home" class="block text-center px-4 py-2 rounded-xl bg-brand text-white">Browse Products</a>
+        </div>
       </div>`;
     }
     return `
-    <div class="px-4 py-6">
-      <h2 class="text-lg font-semibold mb-4">My Reviews</h2>
-      <div class="space-y-3">
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">My Reviews</h2>
+      </div>
+      <div class="px-4 py-6">
+        <div class="space-y-3">
         ${items.map(function(r){
           var title = (r.product_name || (r.product && r.product.name) || r.product || '');
           var rating = parseFloat(r.rating || r.rating_value || 0) || 0;
@@ -1972,6 +2198,7 @@ function profile() {
             ${date ? `<div class="text-[11px] text-gray-400 mt-2">${date}</div>` : ''}
           </div>`;
         }).join('')}
+        </div>
       </div>
     </div>`;
   }
@@ -1979,15 +2206,24 @@ function profile() {
     var items = state.notifications || [];
     if (!Array.isArray(items) || !items.length) {
       return `
-      <div class="px-4 py-6">
-        <h2 class="text-lg font-semibold mb-4">Notifications</h2>
-        <div class="text-center text-gray-500 py-8">No notifications</div>
+      <div>
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+          <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+          <h2 class="text-lg font-semibold">Notifications</h2>
+        </div>
+        <div class="px-4 py-6">
+          <div class="text-center text-gray-500 py-8">No notifications</div>
+        </div>
       </div>`;
     }
     return `
-    <div class="px-4 py-6">
-      <h2 class="text-lg font-semibold mb-4">Notifications</h2>
-      <div class="space-y-3">
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">Notifications</h2>
+      </div>
+      <div class="px-4 py-6">
+        <div class="space-y-3">
         ${items.map(function(n){
           var title = (n.title || '').toString();
           var message = (n.message || '').toString();
@@ -1999,6 +2235,7 @@ function profile() {
             ${time ? `<div class="text-[11px] text-gray-400 mt-2">${time}</div>` : ''}
           </div>`;
         }).join('')}
+        </div>
       </div>
     </div>`;
   }
@@ -2016,9 +2253,13 @@ function profile() {
       {q:'Can I get notifications for deals?',a:'Enable Notifications under Profile. Choose categories you care about and quiet hours. We send smart alerts for price drops on wishlist items, restocks, and personalized deals.'}
     ];
     return `
-    <div class="px-4 py-6">
-      <h2 class="text-lg font-semibold mb-4">Help Center</h2>
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">Help Center</h2>
+      </div>
+      <div class="px-4 py-6">
+        <div class="rounded-xl border border-gray-200 bg-white p-4">
         <div class="text-sm font-semibold mb-2">FAQs</div>
         <div class="divide-y divide-gray-200" id="faqList">
           ${faqs.map(function(f,idx){
@@ -2038,12 +2279,39 @@ function profile() {
     </div>`;
   }
   function about(){
+    var info = state.siteInfo || {};
+    var si = info.site_info || {};
+    var ci = info.contact_info || {};
+    var sm = info.social_media || {};
+    var wc = info.woocommerce || {};
+    var st = info.settings || {};
+    var logo = si.logo ? Assets.api(si.logo) : Assets.local('assets/img/placeholder.png');
+    var name = si.site_name || AppConfig.appName;
+    var desc = si.site_description || '';
+    var email = ci.email || '';
+    var currency = wc.currency || '';
+    var currencySym = wc.currency_symbol || '';
+    var copyright = st.copyright || '';
     return `
-    <div class="px-4 py-6">
-      <h2 class="text-lg font-semibold mb-2">About</h2>
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <div class="text-sm">${AppConfig.appName}</div>
-        <div class="text-xs text-gray-500 mt-1">Shop Live, Shop Smart</div>
+    <div>
+      <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">About</h2>
+      </div>
+      <div class="px-4 py-6">
+        <div class="rounded-xl border border-gray-200 bg-white p-4">
+          <div class="flex items-center gap-3 mb-3">
+          <div class="text-sm font-semibold">Logo:</div>
+            <img src="${logo}" alt="${name}" class="w-44 rounded object-cover"/>
+          </div>
+          <div class="grid grid-cols-1 gap-2 text-xs text-gray-700">
+            ${name ? `<div class="text-sm font-semibold">Name: ${name}</div>` : ''}
+            ${desc?`<div class="text-xs text-gray-600">Description: ${desc}</div>`:''}
+            ${email?`<div><span class="text-gray-500">Email:</span> ${email}</div>`:''}
+            ${currency?`<div><span class="text-gray-500">Currency:</span> ${currency} (${currencySym})</div>`:''}
+          </div>
+          ${copyright?`<div class="mt-3 text-[11px] text-gray-500">${copyright}</div>`:''}
+        </div>
       </div>
     </div>`;
   }
@@ -2091,11 +2359,14 @@ function profile() {
       </div>`;
   }
    return `
-   <div class="px-4 py-6">
-     <div class="flex items-center justify-between mb-4">
-       <h2 class="text-lg font-semibold">Addresses</h2>
-       <button id="addAddress" class="px-3 py-2 rounded-lg bg-brand text-white text-sm">Add Address</button>
-     </div>
+  <div class="px-4 py-6">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-2">
+        <button data-back="profile" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('chevronLeft','w-5 h-5')}</button>
+        <h2 class="text-lg font-semibold">Addresses</h2>
+      </div>
+      <button id="addAddress" class="px-3 py-2 rounded-lg bg-brand text-white text-sm">Add Address</button>
+    </div>
      <div class="grid grid-cols-1 gap-3">
        ${Object.keys(billing).length ? card(billing,'billing') : `<div class="rounded-xl border border-gray-200 bg-white p-4"><div class="text-sm">No billing address</div><div class="mt-2"><button data-edit-address="billing" class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">Add Billing</button></div></div>`}
        ${Object.keys(shipping).length ? card(shipping,'shipping') : `<div class="rounded-xl border border-gray-200 bg-white p-4"><div class="text-sm">No shipping address</div><div class="mt-2"><button data-edit-address="shipping" class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">Add Shipping</button></div></div>`}
@@ -2375,6 +2646,9 @@ function login(){
       case 'cart':
         out = cart();
         break;
+      case 'checkout':
+        out = checkout();
+        break;
       case 'profile':
         out = profile();
         break;
@@ -2383,6 +2657,9 @@ function login(){
         break;
       case 'orders':
         out = orders();
+        break;
+      case 'order':
+        out = order();
         break;
       case 'reviews':
         out = reviews();
@@ -2404,9 +2681,12 @@ function login(){
     }
   
   $('#content').html(out);
+    var activeTab=state.route;
+    if(activeTab==='chatSingle'){activeTab='chat'}
+    if(['login','profile','wishlist','orders','order','reviews','help','notifications','addresses'].indexOf(activeTab)>-1){activeTab='profile'}
     $('#bottomNav [data-tab]').each(function(){
       var tab=$(this).attr('data-tab');
-      var active=(tab===state.route);
+      var active=(tab===activeTab);
       $(this).toggleClass('text-brand',active).toggleClass('text-gray-600',!active).toggleClass('font-medium',active);
     });
     
@@ -2447,6 +2727,8 @@ function login(){
     $(document).on('click', '[data-like]', function(e) {
       e.preventDefault();
       e.stopPropagation();
+      var tkn=null;try{var t1=localStorage.getItem('X-Auth-Token');var t=t1||localStorage.getItem(AppConfig.storage.tokenKey);if(t){try{tkn=JSON.parse(t)}catch(_){tkn=t}}}catch(e){}
+      if(!tkn){ state.nextRoute=(location.hash||'').replace('#','')||'home'; location.hash='login'; try{ route(); }catch(_){} return; }
       var id = parseInt($(this).attr('data-like'), 10);
       var liked = (state.serverWishlistIds || []).indexOf(id) > -1;
       var req = liked ? API.removeWishlist(id) : API.addWishlist(id);
@@ -2465,6 +2747,8 @@ function login(){
     // Add or remove cart (server cart)
     $(document).on('click', '[data-add]', function(e) {
       e.stopPropagation();
+      var tkn=null;try{var t1=localStorage.getItem('X-Auth-Token');var t=t1||localStorage.getItem(AppConfig.storage.tokenKey);if(t){try{tkn=JSON.parse(t)}catch(_){tkn=t}}}catch(e){}
+      if(!tkn){ state.nextRoute=(location.hash||'').replace('#','')||'home'; location.hash='login'; try{ route(); }catch(_){} return; }
       var id = parseInt($(this).attr('data-add'), 10);
       var product = (state.data.allProducts || []).find(function(p) { return p.id === id; });
       var inCart = (state.cartServer && Array.isArray(state.cartServer.items)) ? state.cartServer.items.some(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); return pid===id; }) : false;
@@ -2533,27 +2817,8 @@ function login(){
         .fail(function(){ toast('error','Failed to update cart'); });
     });
     
-    // Checkout
     $(document).on('click', '#checkout', function() {
-      if (!state.cart.length) {
-        toast('error', 'Cart is empty');
-        return;
-      }
-      
-      modal(`
-        <div class="text-center p-4">
-          <div class="text-lg font-semibold mb-2">Confirm Checkout</div>
-          <div class="text-sm text-gray-500 mb-4">Proceed with payment for ${state.cart.length} item(s)</div>
-          <div class="flex gap-2">
-            <button id="confirmCheckout" class="flex-1 px-4 py-2 rounded-xl bg-brand text-white hover:bg-brandDark">
-              Confirm
-            </button>
-            <button id="modalClose" class="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-50">
-              Cancel
-            </button>
-          </div>
-        </div>
-      `);
+      location.hash = 'checkout';
     });
     
     // Modal close
@@ -2562,17 +2827,44 @@ function login(){
       if (e.target === this) closeModal();
     });
     
-    // Confirm checkout
-    $(document).on('click', '#confirmCheckout', function() {
-      closeModal();
-      API.cartClear()
-        .done(function(){
-          state.cartServer = { items: [] };
-          state.cartCount = 0;
-          toast('success','Order placed successfully!');
-          location.hash = 'orders';
+    $(document).on('click', '#placeOrder', function() {
+      var d = state.addressesData || {};
+      var billing = d.billing || {};
+      var shipping = d.shipping || {};
+      var items = ((state.cartServer||{}).items||[]).map(function(i){
+        var pid = parseInt((i.product_id||i.id||i.productId||0),10);
+        var qty = parseInt(i.quantity,10)||1;
+        return { product_id: pid, quantity: qty };
+      }).filter(function(x){ return x.product_id>0; });
+      if (!items.length) { toast('error','Cart is empty'); return; }
+      var body = { items: items, billing: billing, shipping: shipping, payment: state.paymentMethod || {} };
+      API.ordersCreate(body)
+        .done(function(res){
+          var createdId = (res && (res.id || (res.order && res.order.id))) || (res && res.data && (res.data.id || (res.data.order && res.data.order.id))) || 0;
+          API.cartClear().always(function(){
+            API.cart().done(function(cres){
+              var arr=(cres&&cres.items)||(cres&&cres.data&&cres.data.items)||[];
+              state.cartServer={items:arr};
+              state.cartCount=arr.reduce(function(s,i){return s+(parseInt(i.quantity,10)||0);},0);
+              toast('success','Order placed successfully');
+              if (createdId) {
+                API.orderById(createdId).done(function(o){ state.orderDetails=(o&&o.data)||o||{}; location.hash='order?id='+createdId; }).fail(function(){ location.hash='order?id='+createdId; });
+              } else {
+                location.hash='orders';
+              }
+            }).fail(function(){ state.cartServer={items:[]}; state.cartCount=0; toast('success','Order placed successfully'); if(createdId){ location.hash='order?id='+createdId; } else { location.hash='orders'; } });
+          });
         })
-        .fail(function(){ toast('error','Failed to clear cart'); });
+        .fail(function(){ toast('error','Failed to place order'); });
+    });
+    $(document).on('click','[data-back]',function(){
+      var target=$(this).attr('data-back')||'';
+      try{ if(window.history && window.history.length>1){ window.history.back(); return; } }catch(_){ }
+      if(target){ location.hash=target; } else { location.hash='profile'; }
+    });
+    $(document).on('click', '#orderBack', function(){
+      try { if (window.history && window.history.length > 1) { window.history.back(); return; } } catch(_) {}
+      location.hash = 'orders';
     });
     
     // Logout
@@ -2893,7 +3185,7 @@ function login(){
       var remember=$('#loginRemember').prop('checked');
       if(!identifier || !password){toast('error','Enter email/username and password');return}
       var payload={password:password,remember:remember};
-      if(identifier.indexOf('@')>-1){payload.email=identifier}else{payload.username=identifier}
+      if(identifier.indexOf('@')>-1){payload.username=identifier}
       API.authLogin(payload)
         .done(function(res){
           var token=(res&&res.session_token)||(res&&res.token)||((res&&res.data&&res.data.session_token)||(res&&res.data&&res.data.token))||(res&&res.access_token)||'';
@@ -2910,7 +3202,7 @@ function login(){
               last_name:u.last_name
             };
             toast('success','Signed in');
-            gotoProfile();
+            var next=state.nextRoute||''; state.nextRoute=''; if(next){ location.hash=next; try{ route(); }catch(_){}} else { gotoProfile(); }
           }else{
             toast('error','Invalid credentials');
           }
@@ -2945,7 +3237,7 @@ function login(){
               last_name:u.last_name
             };
             toast('success','Account created');
-            gotoProfile();
+            var next=state.nextRoute||''; state.nextRoute=''; if(next){ location.hash=next; try{ route(); }catch(_){}} else { gotoProfile(); }
           }else{
             var identifier=username||email;
             var payload={password:pass,remember:true};
@@ -2966,7 +3258,7 @@ function login(){
                     last_name:u2.last_name
                   };
                   toast('success','Account created');
-                  gotoProfile();
+                  var next2=state.nextRoute||''; state.nextRoute=''; if(next2){ location.hash=next2; try{ route(); }catch(_){}} else { gotoProfile(); }
                 }else{
                   toast('success','Account created');
                   location.hash='login';
@@ -3293,6 +3585,58 @@ function login(){
           .fail(function(){ toast('error','Failed to add to cart'); });
       }
     });
+    $(document).on('click','#addReviewBtn',function(){
+      var pid=parseInt($(this).attr('data-product-id'),10)||0;
+      var prod=(state.data.allProducts||[]).find(function(x){return x.id===pid})||{};
+      var name=((state.user&&((state.user.display_name)||(((state.user.first_name||'')+' '+(state.user.last_name||'')).trim()))))||((state.user&&state.user.username)||'');
+      var html=`
+        <div class="p-4">
+          <div class="text-lg font-semibold mb-2">Add Review</div>
+          <div class="text-sm text-gray-600 mb-3">Product: ${prod.title||prod.name||''}</div>
+          <form id="addReviewForm" data-product-id="${pid}" class="space-y-3">
+            <div>
+              <label class="text-sm text-gray-700">Rating</label>
+              <select id="reviewRating" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2">
+                <option value="">Select rating</option>
+                <option value="5">5 - Excellent</option>
+                <option value="4">4 - Good</option>
+                <option value="3">3 - Average</option>
+                <option value="2">2 - Poor</option>
+                <option value="1">1 - Bad</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm text-gray-700">Name</label>
+              <input id="reviewName" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value="${name||''}" readonly/>
+            </div>
+            <div>
+              <label class="text-sm text-gray-700">Title</label>
+              <input id="reviewTitle" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="Review title"/>
+            </div>
+            <div>
+              <label class="text-sm text-gray-700">Review</label>
+              <textarea id="reviewText" rows="4" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" placeholder="Write your review..."></textarea>
+            </div>
+            <div class="flex items-center justify-end gap-2">
+              <button type="button" id="reviewCancel" class="px-3 py-2 rounded-xl bg-gray-100 text-gray-700">Cancel</button>
+              <button type="submit" class="px-3 py-2 rounded-xl bg-brand text-white">Submit</button>
+            </div>
+          </form>
+        </div>`;
+      modal(html);
+    });
+    $(document).on('click','#reviewCancel',function(){closeModal()});
+    $(document).on('submit','#addReviewForm',function(e){
+      e.preventDefault();
+      var pid=parseInt($(this).attr('data-product-id'),10)||0;
+      var rating=parseInt($('#reviewRating').val(),10)||0;
+      var title=$('#reviewTitle').val()||'';
+      var text=$('#reviewText').val()||'';
+      if(!pid||!rating||!text){toast('error','Fill required fields');return}
+      API.reviewsAdd({product_id:pid,rating:rating,review:text,title:title})
+        .done(function(){toast('success','Review submitted');closeModal();})
+        .fail(function(){toast('error','Failed to submit review')});
+    });
     $(document).on('click', '#pdBuyNow', function(){
       var id = parseInt($(this).attr('data-id'), 10);
       var q = state.productQty || 1;
@@ -3329,6 +3673,20 @@ function login(){
   function start() {
     showSplashOnce(function(){
       $('#app').html(shell());
+      try{
+        API.siteInfo()
+          .done(function(res){
+            state.siteInfo = res || {};
+            try{
+              var si = state.siteInfo.site_info || {};
+              if(si.logo){ var lg = Assets.api(si.logo); $('#headerLogo').attr('src', lg); }
+              if(si.favicon){ var fv = Assets.api(si.favicon); var link = document.querySelector('link[rel="icon"]') || document.createElement('link'); link.rel='icon'; link.type='image/png'; link.href=fv; if(!link.parentNode){ document.head.appendChild(link);} }
+              if(si.offer_banner){ state.offerBanner = si.offer_banner; }
+            }catch(_){}
+          })
+          .fail(function(){ state.siteInfo = state.siteInfo || {}; });
+        if(state.route==='home'){ render(); }
+      }catch(_){}
       bind();
       loadDataFromAPI();
       route();
@@ -3400,17 +3758,17 @@ function categoryChips() {
   var qs = (location.hash.split('?')[1] || '').split('&').reduce(function(acc,p){var kv=p.split('=');if(kv[0]) acc[kv[0]]=decodeURIComponent(kv[1]||'');return acc},{})
   var activeCat = (qs.cat || 'All').toLowerCase();
   var list = Array.isArray(window.categories) ? window.categories.slice(0) : [];
-  var cats = [{ name: 'All' }].concat(list);
+  var cats = [{ name: 'All', img: '' }].concat(list);
   var items = cats.map(function(c, i) {
     var name = c.name || 'All';
     var active = (name.toLowerCase() === activeCat) || (activeCat === 'all' && i === 0);
     var cls = active ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200';
+    var img = (c.img||'').toString();
+    var imgHtml = img ? (`<img src="${Assets.api(img)}" alt="${name}" class="w-10 h-10 rounded-full object-cover mb-1"/>`) : (`<div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mb-1"><span class="text-sm">${name.charAt(0)}</span></div>`);
     return `
     <div class="shrink-0 px-1" style="width: ${100 / 4}%">
       <div data-cat="${name}" class="flex flex-col items-center justify-center px-2 py-4 rounded-xl ${cls} transition-colors cursor-pointer">
-        <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mb-1">
-          <span class="text-sm">${name.charAt(0)}</span>
-        </div>
+        ${imgHtml}
         <div class="text-xs text-center truncate w-full">${name}</div>
       </div>
     </div>`;

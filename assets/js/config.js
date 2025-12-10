@@ -94,6 +94,7 @@ window.APIConfig=(function(){
             cartRemove:'/cart/remove',
             cartClear:'/cart/clear',
             cartCount:'/cart/count',
+            siteInfo:'/site-info',
             messagingConversations:'/messaging/conversations',
             messagingConversationsCreate:'/messaging/conversations',
             messagingMessagesByConversation:'/messaging/conversations/:id/messages',
@@ -124,8 +125,12 @@ window.API=(function(){
             return t?JSON.parse(t):null
         }catch(e){return null}
     }
+    function cacheKey(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var t=token();return method+':'+url+(t?('|t='+t):'')}
+    function readCache(k){try{var s=localStorage.getItem('api_cache:'+k);return s?JSON.parse(s):null}catch(e){return null}}
+    function writeCache(k,data){try{localStorage.setItem('api_cache:'+k,JSON.stringify(data))}catch(e){}}
+    function invalidateCache(match){try{for(var i=localStorage.length-1;i>=0;i--){var key=localStorage.key(i)||'';if(key.indexOf('api_cache:')===0 && key.indexOf(match)>-1){localStorage.removeItem(key)}}}catch(e){}}
     function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Accept':'application/json'};var t=token();if(t){headers['X-Auth-Token']=t;headers['Authorization']='Bearer '+t}var ajaxOpts={method:method,url:url,headers:headers};if(opt.formData){ajaxOpts.data=opt.formData;ajaxOpts.processData=false;ajaxOpts.contentType=false}else if(opt.body){var ct=(opt.contentType||'application/json');headers['Content-Type']=ct;ajaxOpts.data=ct==='application/json'?JSON.stringify(opt.body):opt.body}else{headers['Content-Type']='application/json'}return $.ajax(ajaxOpts)}
-    function get(endpoint,opt){return req('GET',endpoint,opt)}
+    function get(endpoint,opt){opt=opt||{};var k=cacheKey('GET',endpoint,opt);var c=readCache(k);if(c){return $.Deferred().resolve(c).promise()}var jq=req('GET',endpoint,opt);jq.done(function(res){writeCache(k,res)});return jq}
     function post(endpoint,opt){return req('POST',endpoint,opt)}
     function put(endpoint,opt){return req('PUT',endpoint,opt)}
     function del(endpoint,opt){return req('DELETE',endpoint,opt)}
@@ -140,13 +145,13 @@ window.API=(function(){
         authRegister:function(body){return post(APIConf.endpoints.authRegister,{body:body})},
         authLogin:function(body){return post(APIConf.endpoints.authLogin,{body:body})},
         authProfile:function(){return get(APIConf.endpoints.authProfile)},
-        authProfileUpdate:function(body){return put(APIConf.endpoints.authProfile,{body:body})},
+        authProfileUpdate:function(body){return put(APIConf.endpoints.authProfile,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
         authLogout:function(){return post(APIConf.endpoints.authLogout)},
         authValidateToken:function(){return get(APIConf.endpoints.authValidateToken)},
         getWishlist:function(){return get(APIConf.endpoints.wishlist)},
-        addWishlist:function(id){return post(APIConf.endpoints.wishlistAdd,{body:{product_id:id}})},
-        removeWishlist:function(id){return del(APIConf.endpoints.wishlistRemove,{body:{product_id:id}})},
-        clearWishlist:function(){return del(APIConf.endpoints.wishlistClear)},
+        addWishlist:function(id){return post(APIConf.endpoints.wishlistAdd,{body:{product_id:id}}).always(function(){invalidateCache(APIConf.endpoints.wishlist)})},
+        removeWishlist:function(id){return del(APIConf.endpoints.wishlistRemove,{body:{product_id:id}}).always(function(){invalidateCache(APIConf.endpoints.wishlist)})},
+        clearWishlist:function(){return del(APIConf.endpoints.wishlistClear).always(function(){invalidateCache(APIConf.endpoints.wishlist)})},
         checkWishlist:function(id){return get(APIConf.endpoints.wishlistCheck,{params:{id:id}})},
         moveWishlistToCart:function(id){return post(APIConf.endpoints.wishlistMoveToCart,{params:{id:id}})},
         reviewsAdd:function(body){return post(APIConf.endpoints.reviewsAdd,{body:body})},
@@ -154,23 +159,24 @@ window.API=(function(){
         reviewsUpdate:function(id,body){return put(APIConf.endpoints.reviewsUpdate,{params:{id:id},body:body})},
         reviewsDelete:function(id){return del(APIConf.endpoints.reviewsDelete,{params:{id:id}})},
         addresses:function(){return get(APIConf.endpoints.addresses)},
-        addressesAdd:function(body){return post(APIConf.endpoints.addressesAdd,{body:body})},
-        addressesUpdate:function(body){return put(APIConf.endpoints.addressesUpdate,{body:body})},
-        addressesDelete:function(body){return del(APIConf.endpoints.addressesDelete,{body:body})},
-        addressesSetDefault:function(body){return post(APIConf.endpoints.addressesSetDefault,{body:body})},
+        addressesAdd:function(body){return post(APIConf.endpoints.addressesAdd,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
+        addressesUpdate:function(body){return put(APIConf.endpoints.addressesUpdate,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
+        addressesDelete:function(body){return del(APIConf.endpoints.addressesDelete,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
+        addressesSetDefault:function(body){return post(APIConf.endpoints.addressesSetDefault,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
         productsUpdate:function(id,body){return put(APIConf.endpoints.productsUpdate,{params:{id:id},body:body})},
-        ordersCreate:function(body){return post(APIConf.endpoints.ordersCreate,{body:body})},
+        ordersCreate:function(body){return post(APIConf.endpoints.ordersCreate,{body:body}).always(function(){invalidateCache(APIConf.endpoints.orders);invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
         orders:function(){return get(APIConf.endpoints.orders)},
         orderById:function(id){return get(APIConf.endpoints.orderById,{params:{id:id}})},
         ordersCancel:function(body){return post(APIConf.endpoints.ordersCancel,{body:body})},
         ordersTracking:function(id){return get(APIConf.endpoints.ordersTracking,{params:{id:id}})},
         ordersStatuses:function(){return get(APIConf.endpoints.ordersStatuses)},
         cart:function(){return get(APIConf.endpoints.cart)},
-        cartAdd:function(productId,quantity){return post(APIConf.endpoints.cartAdd,{body:{product_id:productId,quantity:quantity||1}})},
-        cartUpdate:function(body){return put(APIConf.endpoints.cartUpdate,{body:body})},
-        cartRemove:function(cartItemKey){return del(APIConf.endpoints.cartRemove,{body:{cart_item_key:cartItemKey}})},
-        cartClear:function(){return del(APIConf.endpoints.cartClear)},
+        cartAdd:function(productId,quantity){return post(APIConf.endpoints.cartAdd,{body:{product_id:productId,quantity:quantity||1}}).always(function(){invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
+        cartUpdate:function(body){return put(APIConf.endpoints.cartUpdate,{body:body}).always(function(){invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
+        cartRemove:function(cartItemKey){return del(APIConf.endpoints.cartRemove,{body:{cart_item_key:cartItemKey}}).always(function(){invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
+        cartClear:function(){return del(APIConf.endpoints.cartClear).always(function(){invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
         cartCount:function(){return get(APIConf.endpoints.cartCount)}
+        ,siteInfo:function(){return get(APIConf.endpoints.siteInfo)}
         ,messagingConversations:function(q){return get(APIConf.endpoints.messagingConversations,{query:q})}
         ,messagingConversationsCreate:function(body){return post(APIConf.endpoints.messagingConversationsCreate,{body:body})}
         ,messagingMessages:function(id){return get(APIConf.endpoints.messagingMessagesByConversation,{params:{id:id}})}
