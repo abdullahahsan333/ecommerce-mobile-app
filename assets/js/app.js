@@ -1375,9 +1375,15 @@ window.formatViewerCount = formatViewerCount;
   }
   
   function home() {
-    var f20 = state.data.flashSale.slice(0, 20);
-    var feat20 = state.data.featuredProducts.slice(0, 20);
-    var specialOffers = state.data.specialOffers.slice(0, 6);
+    function validHomeProduct(p){
+      var price = parseFloat(String(p.price||'').replace('$',''))||0;
+      var stock = parseInt(p.stock||0,10)||0;
+      var available = (p.inStock!==false) && stock>0 && price>0;
+      return available;
+    }
+    var f20 = (state.data.flashSale||[]).filter(validHomeProduct).slice(0, 20);
+    var feat20 = (state.data.featuredProducts||[]).filter(validHomeProduct).slice(0, 20);
+    var specialOffers = (state.data.specialOffers||[]).filter(validHomeProduct).slice(0, 6);
     var flashSlider = f20.length > 2 ? buildSlider('flashSaleSlider', buildCardItems(f20, 2), 2) : '';
     var featuredSlider = feat20.length > 2 ? buildSlider('featuredSlider', buildCardItems(feat20, 2), 2) : '';
     var specialOffersSlider = specialOffers.length > 0 ? buildSlider('specialOffersSlider', buildCardItems(specialOffers, 2, true), 1) : '';
@@ -1425,6 +1431,7 @@ window.formatViewerCount = formatViewerCount;
     var minRating = parseFloat(state.query.minRating || '0');
     var stockFilter = state.query.stock || '';
     var list = state.data.allProducts || [];
+    list = list.filter(function(p){ var n=parseFloat((p.price||'').replace('$',''))||0; return n>0; });
     
     // Apply filters
     if (q) {
@@ -2804,7 +2811,7 @@ function login(){
     });
     $(document).on('click', '#clearCacheBtn', function(){
       try{
-        var keep=['me_splash_shown','X-Auth-Token',AppConfig.storage.tokenKey,'token-expires'];
+        var keep=['me_splash_shown',AppConfig.storage.tokenKey,'token-expires'];
         for(var i=localStorage.length-1;i>=0;i--){ var k=localStorage.key(i)||''; if(keep.indexOf(k)===-1){ localStorage.removeItem(k); } }
         state.siteInfo=null; state.offerBanner=''; state.serverWishlist={}; state.serverWishlistIds=[]; state.cartServer={items:[]}; state.cartCount=0; state.purchasedProductIds=[]; state.reviewedProductIds=[]; state.unreviewedCount=0;
         toast('success','Cache cleared');
@@ -3879,18 +3886,27 @@ function register(){
 
 function categoryChips() {
   var qs = (location.hash.split('?')[1] || '').split('&').reduce(function(acc,p){var kv=p.split('=');if(kv[0]) acc[kv[0]]=decodeURIComponent(kv[1]||'');return acc},{})
-  var activeCat = (qs.cat || 'All').toLowerCase();
   var list = Array.isArray(window.categories) ? window.categories.slice(0) : [];
-  var cats = [{ name: 'All', img: '' }].concat(list);
-  var items = cats.map(function(c, i) {
-    var name = c.name || 'All';
-    var active = (name.toLowerCase() === activeCat) || (activeCat === 'all' && i === 0);
+  if (!list.length) { return ''; }
+  var firstName = (list[0] && list[0].name) ? String(list[0].name).toLowerCase() : '';
+  var activeCat = (qs.cat ? String(qs.cat).toLowerCase() : firstName);
+  var cats = list;
+  var visible = Math.min(cats.length, 5);
+  var items = cats.map(function(c) {
+    var name = c.name || '';
+    var active = (name.toLowerCase() === activeCat);
     var cls = active ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200';
     var img = (c.img||'').toString();
-    var imgHtml = img ? (`<img src="${Assets.api(img)}" alt="${name}" class="w-10 h-10 rounded-full object-cover mb-1"/>`) : (`<div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center mb-1"><span class="text-sm">${name.charAt(0)}</span></div>`);
+    var imgHtml = img ? (`
+      <img src="${Assets.api(img)}" alt="${name}" class="w-12 h-12 rounded object-cover mb-1"/>
+      `) : (`
+        <div class="w-12 h-12 rounded bg-white/20 flex items-center justify-center mb-1">
+          <span class="text-sm">${name.charAt(0)}</span>
+        </div>
+      `);
     return `
-    <div class="shrink-0 px-1" style="width: ${100 / 4}%">
-      <div data-cat="${name}" class="flex flex-col items-center justify-center px-2 py-4 rounded-xl ${cls} transition-colors cursor-pointer">
+    <div class="shrink-0 px-1" style="width: ${100 / visible}%">
+      <div data-cat="${name}" class="flex flex-col items-center justify-center p-2 rounded-xl ${cls} transition-colors cursor-pointer">
         ${imgHtml}
         <div class="text-xs text-center truncate w-full">${name}</div>
       </div>
@@ -3903,7 +3919,7 @@ function categoryChips() {
     <a href="#products" class="text-brand text-sm">View All</a>
   </div>`;
   
-  return head + buildSlider('categoriesSlider', items, 4);
+  return head + buildSlider('categoriesSlider', items, visible);
 }
 
 function flashSaleHeader() {

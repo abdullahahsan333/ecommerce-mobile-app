@@ -36,7 +36,7 @@ window.AppConfig=(function(){
             modalBackdrop:'bg-black/40'
         },
         flags:{
-            debug:true
+            debug:false
         }
     }
 })();
@@ -51,7 +51,7 @@ window.AppConfig=(function(){
 
 window.APIConfig=(function(){
     return {
-        baseUrl:'http://localhost/liveshopping',
+        baseUrl:'http://178.128.112.23',
         namespace:'/wp-json/ecommerce-master/v1',
         endpoints:{
             products:'/products',
@@ -119,8 +119,6 @@ window.API=(function(){
     function build(endpoint,params,query){var url=APIConf.baseUrl+APIConf.namespace+endpoint;if(params){Object.keys(params).forEach(function(k){url=url.replace(':'+k,encodeURIComponent(params[k]))})}if(query){var qs=Object.keys(query).filter(function(k){return query[k]!==undefined&&query[k]!==null&&query[k]!==''}).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(query[k])}).join('&');if(qs) url+=('?'+qs)}return url}
     function token(){
         try{
-            var t1=localStorage.getItem('X-Auth-Token');
-            if(t1){return JSON.parse(t1)}
             var t=localStorage.getItem(AppConf.storage.tokenKey);
             return t?JSON.parse(t):null
         }catch(e){return null}
@@ -130,17 +128,22 @@ window.API=(function(){
         if(opt.params && opt.params.id!==undefined && opt.params.id!==null){ id=String(opt.params.id); }
         else if(opt.params && opt.params.slug!==undefined && opt.params.slug!==null){ id=String(opt.params.slug); }
         else if(opt.query && opt.query.id!==undefined && opt.query.id!==null){ id=String(opt.query.id); }
+        else {
+            var q=opt.query||{}; var keys=['page','per_page','q','filter','cat','min','max','tags','sort','attrs','brands','minRating','stock'];
+            var parts=[]; keys.forEach(function(k){ var v=q[k]; if(v!==undefined && v!==null && v!==''){ parts.push(k+'='+String(v)); }});
+            if(parts.length){ id='list|'+parts.join('&'); }
+        }
         return method+':'+endpoint+'='+id;
     }
     function readCache(k){
         try{
-            var t=token(); var prefix='api_cache_user:'+(t?String(t):'anon')+':';
+            var t=token(); var auth=(t?('Bearer '+String(t)):'anon'); var prefix='api_cache_auth:'+auth+':';
             var s=localStorage.getItem(prefix+k); return s?JSON.parse(s):null
         }catch(e){return null}
     }
     function writeCache(k,data){
         try{
-            var t=token(); var prefix='api_cache_user:'+(t?String(t):'anon')+':';
+            var t=token(); var auth=(t?('Bearer '+String(t)):'anon'); var prefix='api_cache_auth:'+auth+':';
             localStorage.setItem(prefix+k,JSON.stringify(data))
         }catch(e){}
     }
@@ -148,11 +151,11 @@ window.API=(function(){
         try{
             for(var i=localStorage.length-1;i>=0;i--){
                 var key=localStorage.key(i)||'';
-                if(key.indexOf('api_cache_user:')===0 && key.indexOf(':'+match+'=')>-1){ localStorage.removeItem(key) }
+                if(key.indexOf('api_cache_auth:')===0 && key.indexOf(':'+match+'=')>-1){ localStorage.removeItem(key) }
             }
         }catch(e){}
     }
-    function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Accept':'application/json'};var t=token();if(t){headers['X-Auth-Token']=t;headers['Authorization']='Bearer '+t}var ajaxOpts={method:method,url:url,headers:headers};if(opt.formData){ajaxOpts.data=opt.formData;ajaxOpts.processData=false;ajaxOpts.contentType=false}else if(opt.body){var ct=(opt.contentType||'application/json');headers['Content-Type']=ct;ajaxOpts.data=ct==='application/json'?JSON.stringify(opt.body):opt.body}else{headers['Content-Type']='application/json'}return $.ajax(ajaxOpts)}
+    function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Accept':'application/json'};var t=token();if(t){headers['Authorization']='Bearer '+t}var ajaxOpts={method:method,url:url,headers:headers};if(opt.formData){ajaxOpts.data=opt.formData;ajaxOpts.processData=false;ajaxOpts.contentType=false}else if(opt.body){var ct=(opt.contentType||'application/json');headers['Content-Type']=ct;ajaxOpts.data=ct==='application/json'?JSON.stringify(opt.body):opt.body}else{headers['Content-Type']='application/json'}return $.ajax(ajaxOpts)}
     function get(endpoint,opt){opt=opt||{};var k=cacheKey('GET',endpoint,opt);var c=readCache(k);if(c){return $.Deferred().resolve(c).promise()}var jq=req('GET',endpoint,opt);jq.done(function(res){writeCache(k,res)});return jq}
     function post(endpoint,opt){return req('POST',endpoint,opt)}
     function put(endpoint,opt){return req('PUT',endpoint,opt)}
