@@ -84,6 +84,10 @@ window.formatViewerCount = formatViewerCount;
   state.messagingUsers={sellers:[],customers:[],admins:[]};
   state.siteInfo=null;
   state.offerBanner='';
+  state.purchasedProductIds=[];
+  state.reviewedProductIds=[];
+  state.unreviewedCount=0;
+  state.reviewProducts=[];
   
   function load(k){
     try{
@@ -832,14 +836,34 @@ window.formatViewerCount = formatViewerCount;
         });
       API.orders()
         .done(function(res){
-          var items = (res && res.data && res.data.orders) || (res && res.orders) || (Array.isArray(res) ? res : []);
-          state.ordersCount = Array.isArray(items) ? items.length : (res && typeof res.count==='number' ? res.count : 0);
+          var orders = (res && res.data && res.data.orders) || (res && res.orders) || (Array.isArray(res) ? res : []);
+          state.ordersCount = Array.isArray(orders) ? orders.length : (res && typeof res.count==='number' ? res.count : 0);
+          var set={};
+          function pushItems(list){
+            (list||[]).forEach(function(i){ var pid=parseInt((i.product_id||i.id||i.productId||0),10); if(pid>0){ set[pid]=true; } });
+          }
+          (orders||[]).forEach(function(o){
+            var status=(o.status || (o.order_status||'')).toString().toLowerCase();
+            var completed = status.indexOf('completed')>-1 || status.indexOf('delivered')>-1 || status.indexOf('shipped')>-1;
+            if(!completed) return;
+            var items=(o.items||o.line_items||[]);
+            if(Array.isArray(items) && items.length){ pushItems(items); }
+          });
+          state.purchasedProductIds=Object.keys(set).map(function(x){return parseInt(x,10)});
+          var rset=(state.reviewedProductIds||[]).reduce(function(acc,id){acc[id]=true;return acc;},{});
+          var count = (state.purchasedProductIds||[]).filter(function(id){return !rset[id]}).length;
+          state.unreviewedCount=count;
           render();
         });
       API.reviewsUser()
         .done(function(res){
           var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : ((res && Array.isArray(res.data)) ? res.data : []));
           state.reviewsCount = Array.isArray(items) ? items.length : (res && typeof res.count==='number' ? res.count : 0);
+          var ids = Array.isArray(items) ? items.map(function(r){ return parseInt((r.product_id || (r.product && r.product.id) || 0),10)||0; }).filter(function(x){return x>0;}) : [];
+          state.reviewedProductIds = ids;
+          var pset=(state.purchasedProductIds||[]).reduce(function(acc,id){acc[id]=true;return acc;},{});
+          var count = (state.purchasedProductIds||[]).filter(function(id){ return !ids.includes(id); }).length;
+          state.unreviewedCount = count;
           render();
         });
       API.addresses()
@@ -990,13 +1014,51 @@ window.formatViewerCount = formatViewerCount;
         .fail(function(){ state.serverWishlist = { wishlist: [] }; render(); });
     }
     if (state.route === 'reviews') {
+      var tknR=null;try{var t1=localStorage.getItem('X-Auth-Token');var t=t1||localStorage.getItem(AppConfig.storage.tokenKey);if(t){try{tknR=JSON.parse(t)}catch(_){tknR=t}}}catch(e){}
+      if(!tknR){ state.route='login'; render(); return; }
       API.reviewsUser()
         .done(function(res){
-          var items = (res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res) ? res : ((res && Array.isArray(res.data)) ? res.data : []));
-          state.reviewsList = Array.isArray(items) ? items : [];
+          var items=(res && res.data && res.data.reviews) || (res && res.reviews) || (Array.isArray(res)?res:((res && Array.isArray(res.data))?res.data:[]));
+          state.userReviews=Array.isArray(items)?items.map(function(r){
+            var pid=parseInt((r.product_id || (r.product && r.product.id) || 0),10)||0;
+            return { id:(r.id||0), product_id:pid, product_name:(r.product_name || (r.product && r.product.name) || ''), rating:(parseFloat(r.rating || r.rating_value || 0)||0), title:((r.title||'').toString()), review:((r.review||r.content||r.comment||'').toString()), date:((r.date||r.created_at||'').toString()) };
+          }):[];
           render();
         })
-        .fail(function(){ state.reviewsList = []; render(); });
+        .fail(function(){ state.userReviews=state.userReviews||[]; render(); });
+      API.orders()
+        .done(function(res){
+          var orders = (res && res.data && res.data.orders) || (res && res.orders) || (Array.isArray(res) ? res : []);
+          var products=[]; var needIds=[];
+          function pushItems(list){
+            (list||[]).forEach(function(i){
+              var pid=parseInt((i.product_id||i.id||i.productId||0),10);
+              var title=(i.name||i.product_name||'');
+              var img=i.thumbnail|| (i.images&&i.images.thumbnail&& (i.images.thumbnail.src||i.images.thumbnail)) || (i.image&&(i.image.src||i.image)) || (i.images&&i.images.medium&&(i.images.medium.src||i.images.medium)) || '';
+              products.push({product_id:pid,title:title,img:img});
+            });
+          }
+          (orders||[]).forEach(function(o){
+            var status=(o.status || (o.order_status||'')).toString().toLowerCase();
+            var completed = status.indexOf('completed')>-1 || status.indexOf('delivered')>-1 || status.indexOf('shipped')>-1;
+            if(!completed) return;
+            var items=(o.items||o.line_items||[]);
+            if(Array.isArray(items) && items.length){ pushItems(items); }
+            else { var id = o.id || o.order_id; if(id){ needIds.push(parseInt(id,10)); } }
+          });
+          if(needIds.length){
+            var done=0, total=Math.min(needIds.length,10);
+            needIds.slice(0,10).forEach(function(id){
+              API.orderById(id)
+                .done(function(or){ var od=(or&&or.data)||or||{}; var li=(od.items||od.line_items||[]); pushItems(li); })
+                .always(function(){ done++; if(done===total){ var map={}; var out=[]; products.forEach(function(p){ if(p.product_id>0 && !map[p.product_id]){ map[p.product_id]=true; out.push(p);} }); state.reviewProducts=out; render(); }});
+            });
+          } else {
+            var map2={}; var out2=[]; products.forEach(function(p){ if(p.product_id>0 && !map2[p.product_id]){ map2[p.product_id]=true; out2.push(p);} });
+            state.reviewProducts=out2; render();
+          }
+        })
+        .fail(function(){ state.reviewProducts=[]; render(); });
     }
     if (state.route === 'about') {
       API.siteInfo()
@@ -1686,7 +1748,7 @@ window.formatViewerCount = formatViewerCount;
           </div>
         </div>
         <div id="pTab_reviews" class="px-4 py-3 hidden">
-          ${function(){var t=null;try{var t1=localStorage.getItem('X-Auth-Token');var tt=t1||localStorage.getItem(AppConfig.storage.tokenKey);if(tt){try{t=JSON.parse(tt)}catch(_){t=tt}}}catch(e){} return t?`<div class="flex items-center justify-between mb-3"><div class="text-gray-700">Reviews</div><button id="addReviewBtn" data-product-id="${p.id}" class="px-3 py-1.5 rounded-xl bg-brand text-white">Add Review</button></div>`:`<div class="text-gray-600">No reviews yet</div>`;}()}
+          <div class="text-gray-600">No reviews yet</div>
         </div>
         <div id="pTab_shipping" class="px-4 py-3 hidden">
           <div class="text-sm font-semibold mb-2">Free Shipping</div>
@@ -1869,7 +1931,10 @@ function profile() {
     <div class="px-4 py-3">
       <div class="flex items-center justify-between mb-3">
         <div class="text-lg font-semibold">Profile</div>
-        <button id="profileSettings" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('settings','w-5 h-5')}</button>
+        <div class="flex items-center gap-2">
+          <button id="clearCacheBtn" class="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm">Clear Cache</button>
+          <button id="profileSettings" class="p-2 rounded-lg bg-gray-100 hover:bg-gray-200">${svg('settings','w-5 h-5')}</button>
+        </div>
       </div>
       <div class="rounded-2xl p-5 bg-gradient-to-r from-brand/10 to-pink-50">
         <div class="flex items-center gap-4">
@@ -1966,7 +2031,10 @@ function profile() {
                 <div class="text-xs text-gray-500">${state.reviewsCount} reviews written</div>
               </div>
             </div>
-            <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+            <div class="flex items-center gap-2">
+              ${(state.unreviewedCount||0)>0?`<span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600">${state.unreviewedCount}</span>`:''}
+              <div class="text-gray-400">${svg('chevronRight','w-5 h-5')}</div>
+            </div>
           </a>
         </div>
       </div>
@@ -2161,8 +2229,11 @@ function profile() {
     </div>`;
   }
   function reviews(){
-    var items = state.reviewsList || [];
-    if (!items.length) {
+    var purchased = state.reviewProducts || [];
+    var reviews = state.userReviews || [];
+    var reviewedMap = {}; (reviews||[]).forEach(function(r){ var pid=parseInt(r.product_id,10)||0; if(pid>0) reviewedMap[pid]=true; });
+    var unreviewed = (purchased||[]).filter(function(p){ return !reviewedMap[parseInt(p.product_id,10)||0]; });
+    if (!purchased.length && !reviews.length) {
       return `
       <div>
         <div class="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
@@ -2170,7 +2241,7 @@ function profile() {
           <h2 class="text-lg font-semibold">My Reviews</h2>
         </div>
         <div class="px-4 py-6">
-          <div class="text-center text-gray-500 py-8">No reviews found</div>
+          <div class="text-center text-gray-500 py-8">No purchased products found</div>
           <a href="#home" class="block text-center px-4 py-2 rounded-xl bg-brand text-white">Browse Products</a>
         </div>
       </div>`;
@@ -2182,22 +2253,41 @@ function profile() {
         <h2 class="text-lg font-semibold">My Reviews</h2>
       </div>
       <div class="px-4 py-6">
-        <div class="space-y-3">
-        ${items.map(function(r){
-          var title = (r.product_name || (r.product && r.product.name) || r.product || '');
-          var rating = parseFloat(r.rating || r.rating_value || 0) || 0;
-          var text = (r.review || r.content || r.comment || '').toString();
-          var date = (r.date || r.created_at || '').toString();
-          return `
-          <div class="rounded-xl border border-gray-200 bg-white p-4">
-            <div class="flex items-center justify-between">
-              <div class="text-sm font-semibold">${title}</div>
-              <div class="flex items-center gap-1 text-xs text-gray-600">${svg('star','w-4 h-4 text-yellow-400')}<span>${rating.toFixed(1)}</span></div>
-            </div>
-            ${text ? `<div class="text-xs text-gray-700 mt-2">${text}</div>` : ''}
-            ${date ? `<div class="text-[11px] text-gray-400 mt-2">${date}</div>` : ''}
-          </div>`;
-        }).join('')}
+        ${unreviewed.length?`<div class="mb-6">
+          <div class="text-sm font-semibold mb-2">Pending Reviews</div>
+          <div class="space-y-3">
+          ${unreviewed.map(function(p){
+            var img = p.img ? Assets.api(p.img) : Assets.local('assets/img/placeholder.png');
+            var title = p.title || '';
+            var pid = parseInt(p.product_id||0,10) || 0;
+            return `
+            <div class="rounded-xl border border-gray-200 bg-white p-4 flex items-center gap-3">
+              <img src="${img}" class="w-14 h-14 object-cover rounded-lg" alt="${title}"/>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium truncate">${title}</div>
+              </div>
+              ${pid>0?`<button id="addReviewBtn" data-product-id="${pid}" class="px-3 py-1.5 rounded-xl bg-brand text-white">Add Review</button>`:''}
+            </div>`;
+          }).join('')}
+          </div>
+        </div>`:''}
+        <div>
+          <div class="text-sm font-semibold mb-2">Your Reviews</div>
+          ${reviews.length?`<div class="space-y-3">
+            ${reviews.map(function(r){
+              var title = r.product_name || '';
+              var pid = parseInt(r.product_id||0,10)||0;
+              return `
+              <div class="rounded-xl border border-gray-200 bg-white p-4 flex items-center gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate">${title}</div>
+                  <div class="text-xs text-gray-600 mt-1">Rating: ${ (parseFloat(r.rating||0)||0) }</div>
+                  ${r.title?`<div class="text-xs text-gray-700 mt-1">Title: ${r.title}</div>`:''}
+                </div>
+                ${pid>0?`<button data-show-review="${pid}" class="px-3 py-1.5 rounded-xl bg-gray-100 text-gray-800">Show Review</button>`:''}
+              </div>`;
+            }).join('')}
+          </div>`:`<div class="text-xs text-gray-500">No reviews yet</div>`}
         </div>
       </div>
     </div>`;
@@ -2711,6 +2801,15 @@ function login(){
       if (!$('#searchContainer').hasClass('hidden')) {
         $('#searchInput').focus();
       }
+    });
+    $(document).on('click', '#clearCacheBtn', function(){
+      try{
+        var keep=['me_splash_shown','X-Auth-Token',AppConfig.storage.tokenKey,'token-expires'];
+        for(var i=localStorage.length-1;i>=0;i--){ var k=localStorage.key(i)||''; if(keep.indexOf(k)===-1){ localStorage.removeItem(k); } }
+        state.siteInfo=null; state.offerBanner=''; state.serverWishlist={}; state.serverWishlistIds=[]; state.cartServer={items:[]}; state.cartCount=0; state.purchasedProductIds=[]; state.reviewedProductIds=[]; state.unreviewedCount=0;
+        toast('success','Cache cleared');
+        route();
+      }catch(e){ toast('error','Failed to clear cache'); }
     });
     
     // Search form
@@ -3592,7 +3691,6 @@ function login(){
       var html=`
         <div class="p-4">
           <div class="text-lg font-semibold mb-2">Add Review</div>
-          <div class="text-sm text-gray-600 mb-3">Product: ${prod.title||prod.name||''}</div>
           <form id="addReviewForm" data-product-id="${pid}" class="space-y-3">
             <div>
               <label class="text-sm text-gray-700">Rating</label>
@@ -3605,7 +3703,11 @@ function login(){
                 <option value="1">1 - Bad</option>
               </select>
             </div>
-            <div>
+            <label class="flex items-center gap-2 text-sm">
+              <input id="reviewAnon" type="checkbox" class="rounded border-gray-300"/>
+              <span>Post as anonimus</span>
+            </label>
+            <div id="reviewNameWrap">
               <label class="text-sm text-gray-700">Name</label>
               <input id="reviewName" type="text" class="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" value="${name||''}" readonly/>
             </div>
@@ -3626,6 +3728,7 @@ function login(){
       modal(html);
     });
     $(document).on('click','#reviewCancel',function(){closeModal()});
+    $(document).on('change','#reviewAnon',function(){ var on=$(this).prop('checked'); $('#reviewNameWrap').toggleClass('hidden',on); if(on){ $('#reviewName').val('anonimus'); } else { var nm=((state.user&&((state.user.display_name)||(((state.user.first_name||'')+' '+(state.user.last_name||'')).trim()))))||((state.user&&state.user.username)||''); $('#reviewName').val(nm||''); } });
     $(document).on('submit','#addReviewForm',function(e){
       e.preventDefault();
       var pid=parseInt($(this).attr('data-product-id'),10)||0;
@@ -3634,8 +3737,28 @@ function login(){
       var text=$('#reviewText').val()||'';
       if(!pid||!rating||!text){toast('error','Fill required fields');return}
       API.reviewsAdd({product_id:pid,rating:rating,review:text,title:title})
-        .done(function(){toast('success','Review submitted');closeModal();})
+        .done(function(){
+          toast('success','Review submitted');
+          state.userReviews = Array.isArray(state.userReviews)? state.userReviews : [];
+          state.userReviews.push({ id:Date.now(), product_id:pid, product_name:(prod.title||prod.name||''), rating:rating, title:title, review:text, date:new Date().toISOString() });
+          state.reviewProducts = (state.reviewProducts||[]).filter(function(p){ return parseInt(p.product_id,10)!==pid; });
+          render();
+          closeModal();
+        })
         .fail(function(){toast('error','Failed to submit review')});
+    });
+    $(document).on('click','[data-show-review]',function(){
+      var pid=parseInt($(this).attr('data-show-review'),10)||0;
+      var r=(state.userReviews||[]).find(function(x){return parseInt(x.product_id,10)===pid});
+      if(!r){toast('error','Review not found');return}
+      var html=`<div class="p-4">
+        <div class="text-lg font-semibold mb-2">Review</div>
+        <div class="text-sm text-gray-600">${r.product_name||''}</div>
+        <div class="mt-3 text-sm">Rating: ${r.rating||0}</div>
+        ${r.title?`<div class="mt-2 text-sm font-medium">${r.title}</div>`:''}
+        ${r.review?`<div class="mt-2 text-sm text-gray-700">${r.review}</div>`:''}
+      </div>`;
+      modal(html,'Review');
     });
     $(document).on('click', '#pdBuyNow', function(){
       var id = parseInt($(this).attr('data-id'), 10);

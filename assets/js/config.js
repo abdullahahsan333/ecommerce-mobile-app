@@ -125,10 +125,33 @@ window.API=(function(){
             return t?JSON.parse(t):null
         }catch(e){return null}
     }
-    function cacheKey(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var t=token();return method+':'+url+(t?('|t='+t):'')}
-    function readCache(k){try{var s=localStorage.getItem('api_cache:'+k);return s?JSON.parse(s):null}catch(e){return null}}
-    function writeCache(k,data){try{localStorage.setItem('api_cache:'+k,JSON.stringify(data))}catch(e){}}
-    function invalidateCache(match){try{for(var i=localStorage.length-1;i>=0;i--){var key=localStorage.key(i)||'';if(key.indexOf('api_cache:')===0 && key.indexOf(match)>-1){localStorage.removeItem(key)}}}catch(e){}}
+    function cacheKey(method,endpoint,opt){
+        opt=opt||{}; var id='list';
+        if(opt.params && opt.params.id!==undefined && opt.params.id!==null){ id=String(opt.params.id); }
+        else if(opt.params && opt.params.slug!==undefined && opt.params.slug!==null){ id=String(opt.params.slug); }
+        else if(opt.query && opt.query.id!==undefined && opt.query.id!==null){ id=String(opt.query.id); }
+        return method+':'+endpoint+'='+id;
+    }
+    function readCache(k){
+        try{
+            var t=token(); var prefix='api_cache_user:'+(t?String(t):'anon')+':';
+            var s=localStorage.getItem(prefix+k); return s?JSON.parse(s):null
+        }catch(e){return null}
+    }
+    function writeCache(k,data){
+        try{
+            var t=token(); var prefix='api_cache_user:'+(t?String(t):'anon')+':';
+            localStorage.setItem(prefix+k,JSON.stringify(data))
+        }catch(e){}
+    }
+    function invalidateCache(match){
+        try{
+            for(var i=localStorage.length-1;i>=0;i--){
+                var key=localStorage.key(i)||'';
+                if(key.indexOf('api_cache_user:')===0 && key.indexOf(':'+match+'=')>-1){ localStorage.removeItem(key) }
+            }
+        }catch(e){}
+    }
     function req(method,endpoint,opt){opt=opt||{};var url=build(endpoint,opt.params,opt.query);var headers={'Accept':'application/json'};var t=token();if(t){headers['X-Auth-Token']=t;headers['Authorization']='Bearer '+t}var ajaxOpts={method:method,url:url,headers:headers};if(opt.formData){ajaxOpts.data=opt.formData;ajaxOpts.processData=false;ajaxOpts.contentType=false}else if(opt.body){var ct=(opt.contentType||'application/json');headers['Content-Type']=ct;ajaxOpts.data=ct==='application/json'?JSON.stringify(opt.body):opt.body}else{headers['Content-Type']='application/json'}return $.ajax(ajaxOpts)}
     function get(endpoint,opt){opt=opt||{};var k=cacheKey('GET',endpoint,opt);var c=readCache(k);if(c){return $.Deferred().resolve(c).promise()}var jq=req('GET',endpoint,opt);jq.done(function(res){writeCache(k,res)});return jq}
     function post(endpoint,opt){return req('POST',endpoint,opt)}
@@ -142,32 +165,32 @@ window.API=(function(){
         searchProducts:function(q){return get(APIConf.endpoints.productsSearch,{query:q})},
         getCategories:function(){return get(APIConf.endpoints.productsCategories)},
         getReviewsByProduct:function(id){return get(APIConf.endpoints.reviewsByProduct,{params:{id:id}})},
-        authRegister:function(body){return post(APIConf.endpoints.authRegister,{body:body})},
-        authLogin:function(body){return post(APIConf.endpoints.authLogin,{body:body})},
+        authRegister:function(body){return post(APIConf.endpoints.authRegister,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
+        authLogin:function(body){return post(APIConf.endpoints.authLogin,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
         authProfile:function(){return get(APIConf.endpoints.authProfile)},
         authProfileUpdate:function(body){return put(APIConf.endpoints.authProfile,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
-        authLogout:function(){return post(APIConf.endpoints.authLogout)},
+        authLogout:function(){return post(APIConf.endpoints.authLogout).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
         authValidateToken:function(){return get(APIConf.endpoints.authValidateToken)},
         getWishlist:function(){return get(APIConf.endpoints.wishlist)},
         addWishlist:function(id){return post(APIConf.endpoints.wishlistAdd,{body:{product_id:id}}).always(function(){invalidateCache(APIConf.endpoints.wishlist)})},
         removeWishlist:function(id){return del(APIConf.endpoints.wishlistRemove,{body:{product_id:id}}).always(function(){invalidateCache(APIConf.endpoints.wishlist)})},
         clearWishlist:function(){return del(APIConf.endpoints.wishlistClear).always(function(){invalidateCache(APIConf.endpoints.wishlist)})},
         checkWishlist:function(id){return get(APIConf.endpoints.wishlistCheck,{params:{id:id}})},
-        moveWishlistToCart:function(id){return post(APIConf.endpoints.wishlistMoveToCart,{params:{id:id}})},
-        reviewsAdd:function(body){return post(APIConf.endpoints.reviewsAdd,{body:body})},
+        moveWishlistToCart:function(id){return post(APIConf.endpoints.wishlistMoveToCart,{params:{id:id}}).always(function(){invalidateCache(APIConf.endpoints.wishlist);invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
+        reviewsAdd:function(body){return post(APIConf.endpoints.reviewsAdd,{body:body}).always(function(){invalidateCache(APIConf.endpoints.reviewsUser);invalidateCache('/reviews')})},
         reviewsUser:function(){return get(APIConf.endpoints.reviewsUser)},
-        reviewsUpdate:function(id,body){return put(APIConf.endpoints.reviewsUpdate,{params:{id:id},body:body})},
-        reviewsDelete:function(id){return del(APIConf.endpoints.reviewsDelete,{params:{id:id}})},
+        reviewsUpdate:function(id,body){return put(APIConf.endpoints.reviewsUpdate,{params:{id:id},body:body}).always(function(){invalidateCache(APIConf.endpoints.reviewsUser);invalidateCache('/reviews')})},
+        reviewsDelete:function(id){return del(APIConf.endpoints.reviewsDelete,{params:{id:id}}).always(function(){invalidateCache(APIConf.endpoints.reviewsUser);invalidateCache('/reviews')})},
         addresses:function(){return get(APIConf.endpoints.addresses)},
         addressesAdd:function(body){return post(APIConf.endpoints.addressesAdd,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
         addressesUpdate:function(body){return put(APIConf.endpoints.addressesUpdate,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
         addressesDelete:function(body){return del(APIConf.endpoints.addressesDelete,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
         addressesSetDefault:function(body){return post(APIConf.endpoints.addressesSetDefault,{body:body}).always(function(){invalidateCache(APIConf.endpoints.addresses)})},
-        productsUpdate:function(id,body){return put(APIConf.endpoints.productsUpdate,{params:{id:id},body:body})},
+        productsUpdate:function(id,body){return put(APIConf.endpoints.productsUpdate,{params:{id:id},body:body}).always(function(){invalidateCache('/products')})},
         ordersCreate:function(body){return post(APIConf.endpoints.ordersCreate,{body:body}).always(function(){invalidateCache(APIConf.endpoints.orders);invalidateCache(APIConf.endpoints.cart);invalidateCache(APIConf.endpoints.cartCount)})},
         orders:function(){return get(APIConf.endpoints.orders)},
         orderById:function(id){return get(APIConf.endpoints.orderById,{params:{id:id}})},
-        ordersCancel:function(body){return post(APIConf.endpoints.ordersCancel,{body:body})},
+        ordersCancel:function(body){return post(APIConf.endpoints.ordersCancel,{body:body}).always(function(){invalidateCache(APIConf.endpoints.orders)})},
         ordersTracking:function(id){return get(APIConf.endpoints.ordersTracking,{params:{id:id}})},
         ordersStatuses:function(){return get(APIConf.endpoints.ordersStatuses)},
         cart:function(){return get(APIConf.endpoints.cart)},
@@ -178,9 +201,9 @@ window.API=(function(){
         cartCount:function(){return get(APIConf.endpoints.cartCount)}
         ,siteInfo:function(){return get(APIConf.endpoints.siteInfo)}
         ,messagingConversations:function(q){return get(APIConf.endpoints.messagingConversations,{query:q})}
-        ,messagingConversationsCreate:function(body){return post(APIConf.endpoints.messagingConversationsCreate,{body:body})}
+        ,messagingConversationsCreate:function(body){return post(APIConf.endpoints.messagingConversationsCreate,{body:body}).always(function(){invalidateCache(APIConf.endpoints.messagingConversations)})}
         ,messagingMessages:function(id){return get(APIConf.endpoints.messagingMessagesByConversation,{params:{id:id}})}
-        ,messagingMessagesSend:function(id,bodyOrForm){if(bodyOrForm instanceof FormData){return post(APIConf.endpoints.messagingMessagesSend,{params:{id:id},formData:bodyOrForm})}return post(APIConf.endpoints.messagingMessagesSend,{params:{id:id},body:bodyOrForm})}
+        ,messagingMessagesSend:function(id,bodyOrForm){if(bodyOrForm instanceof FormData){return post(APIConf.endpoints.messagingMessagesSend,{params:{id:id},formData:bodyOrForm}).always(function(){invalidateCache('/messaging/conversations/'+id+'/messages')})}return post(APIConf.endpoints.messagingMessagesSend,{params:{id:id},body:bodyOrForm}).always(function(){invalidateCache('/messaging/conversations/'+id+'/messages')})}
         ,messagingUsers:function(q){return get(APIConf.endpoints.messagingUsers,{query:q})}
     }
 })();
