@@ -126,17 +126,17 @@ window.formatViewerCount = formatViewerCount;
     var footer = `
       <nav id="bottomNav" class="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200">
           <div class="grid grid-cols-5 text-xs">
-            <a href="#home" data-tab="home" class="flex flex-col items-center py-2 text-gray-600">${svg('home','w-6 h-6')}<span>Home</span></a>
-            <a href="#chat" data-tab="chat" class="flex flex-col items-center py-2 text-gray-600">${svg('chat','w-6 h-6')}<span>Chat</span></a>
+            <a href="#home" data-tab="home" class="flex flex-col items-center py-2 text-black">${svg('home','w-6 h-6')}<span>Home</span></a>
+            <a href="#chat" data-tab="chat" class="flex flex-col items-center py-2 text-black">${svg('chat','w-6 h-6')}<span>Chat</span></a>
             <div class="relative">
               <button id="fabBtn" class="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full text-white shadow-lg flex items-center justify-center bg-brand">${svg('plus','w-6 h-6')}</button>
             </div>
-            <a href="#cart" data-tab="cart" class="flex flex-col items-center py-2 text-gray-600 relative">
+            <a href="#cart" data-tab="cart" class="flex flex-col items-center py-2 text-black relative">
               ${svg('cart','w-6 h-6')}
               <span>Cart</span>
               ${(state.cartCount||0) > 0 ? `<span class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">${state.cartCount}</span>` : ''}
             </a>
-            <a href="#profile" data-tab="profile" class="flex flex-col items-center py-2 text-gray-600">${svg('user','w-6 h-6')}<span>Profile</span></a>
+            <a href="#profile" data-tab="profile" class="flex flex-col items-center py-2 text-black">${svg('user','w-6 h-6')}<span>Profile</span></a>
           </div>
       </nav>`;
     
@@ -797,6 +797,28 @@ window.formatViewerCount = formatViewerCount;
     location.hash='profile';
     try { route(); } catch(_) {}
   }
+
+  function getImageAverageColor(url, cb){
+    try{
+      if(location.protocol==='file:'){ cb(AppConfig.theme.text); return; }
+      var u=new URL(url, location.href);
+      var same=u.origin===location.origin;
+      if(!same){ cb(AppConfig.theme.text); return; }
+      var img=new Image();
+      img.onload=function(){
+        try{
+          var s=16; var c=document.createElement('canvas'); c.width=s; c.height=s; var ctx=c.getContext('2d');
+          ctx.drawImage(img,0,0,s,s);
+          var data=ctx.getImageData(0,0,s,s).data; var r=0,g=0,b=0,n=0;
+          for(var i=0;i<data.length;i+=4){ var a=data[i+3]; if(a<128) continue; r+=data[i]; g+=data[i+1]; b+=data[i+2]; n++; }
+          if(n>0){ r=Math.round(r/n); g=Math.round(g/n); b=Math.round(b/n); var hex='#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); cb(hex); }
+          else{ cb(AppConfig.theme.text); }
+        }catch(_){ cb(AppConfig.theme.text); }
+      };
+      img.onerror=function(){ cb(AppConfig.theme.text); };
+      img.src=u.href;
+    }catch(e){ cb(AppConfig.theme.text); }
+  }
   
   function route() {
     var hash = location.hash.replace('#', '');
@@ -830,7 +852,8 @@ window.formatViewerCount = formatViewerCount;
             email: u.email,
             display_name: u.display_name || (u.first_name && u.last_name ? (u.first_name + ' ' + u.last_name) : (u.username || '')),
             first_name: u.first_name,
-            last_name: u.last_name
+            last_name: u.last_name,
+            avatarUrl: (u.avatar || u.avatar_url || u.profile_photo || u.photo || '')
           };
           render();
         });
@@ -1388,7 +1411,7 @@ window.formatViewerCount = formatViewerCount;
     var featuredSlider = feat20.length > 2 ? buildSlider('featuredSlider', buildCardItems(feat20, 2), 2) : '';
     var specialOffersSlider = specialOffers.length > 0 ? buildSlider('specialOffersSlider', buildCardItems(specialOffers, 2, true), 1) : '';
     return `
-      <div class="min-h-screen">
+      <div>
         ${heroBanner()}
         ${(state.offerBanner&&state.offerBanner.length)?`<section class="px-4 pt-3"><img src="${Assets.api(state.offerBanner)}" class="w-full rounded-2xl object-cover" alt="Offer"/></section>`:''}
         ${categoryChips()}
@@ -2784,7 +2807,12 @@ function login(){
     $('#bottomNav [data-tab]').each(function(){
       var tab=$(this).attr('data-tab');
       var active=(tab===activeTab);
-      $(this).toggleClass('text-brand',active).toggleClass('text-gray-600',!active).toggleClass('font-medium',active);
+      var col=active?(state.footerActiveColor||AppConfig.theme.text):'#000';
+      $(this)
+        .css('color',col)
+        .toggleClass('font-semibold',active)
+        .toggleClass('opacity-100',active)
+        .toggleClass('opacity-70',!active);
     });
     
   setTimeout(function() {
@@ -2874,7 +2902,10 @@ function login(){
           })
           .fail(function(){ toast('error','Failed to remove from cart'); });
       } else {
-        if (!product || !product.inStock) { toast('error','Product is out of stock'); return; }
+        var price = parseFloat(String((product && product.price) || '').replace('$','')) || 0;
+        var stock = parseInt((product && product.stock) || 0, 10) || 0;
+        if (!product || product.inStock===false || stock<=0) { toast('error','This Product Out Of Stock!'); return; }
+        if (price<=0) { toast('error','This Product only Simple, Not For Sale!'); return; }
         API.cartAdd(id,1)
           .done(function(){
             API.cart().done(function(res){
@@ -3418,9 +3449,28 @@ function login(){
     $(document).on('change','#editPhoto',function(){
       var file=this.files && this.files[0];
       if(!file) return;
+      if((file.type||'').indexOf('image/')!==0){ toast('error','Please select an image'); return; }
       var reader=new FileReader();
-      reader.onload=function(e){$('#editPhotoPreview').attr('src',e.target.result);state._pendingAvatarData=e.target.result;};
+      reader.onload=function(e){$('#editPhotoPreview').attr('src',e.target.result);};
       reader.readAsDataURL(file);
+      API.authProfileUpdateAvatarBase64(file)
+        .done(function(){
+          toast('success','Profile photo updated');
+          API.authProfile().done(function(res){
+            var u=(res&&res.data)||res||{};
+            state.user={
+              id:u.id,
+              username:u.username,
+              email:u.email,
+              display_name:u.display_name || (u.first_name && u.last_name ? (u.first_name + ' ' + u.last_name) : (u.username || '')),
+              first_name:u.first_name,
+              last_name:u.last_name,
+              avatarUrl:(u.avatar || u.avatar_url || u.profile_photo || u.photo || '')
+            };
+            render();
+          });
+        })
+        .fail(function(){ toast('error','Failed to update photo') });
     });
     $(document).on('click','#saveProfile',function(){
       var full=($('#editFullName').val()||'').toString();
@@ -3429,16 +3479,26 @@ function login(){
       var parts=full.trim().split(/\s+/);
       var first=parts[0]||'';
       var last=parts.slice(1).join(' ')||'';
-      API.authProfileUpdate({first_name:first,last_name:last,display_name:full,billing:{phone:phone}})
+      var body={first_name:first,last_name:last,display_name:full};
+      if(email){body.email=email}
+      closeModal();
+      API.authProfileUpdate(body)
         .done(function(){
-          state.user=state.user||{};
-          if(full) state.user.display_name=full;
-          if(email) state.user.email=email;
-          state.user.phone=phone;
-          if(state._pendingAvatarData){state.user.avatarUrl=state._pendingAvatarData;state._pendingAvatarData=null;}
           toast('success','Profile updated');
-          closeModal();
-          render();
+          API.authProfile().done(function(res){
+            var u=(res&&res.data)||res||{};
+            state.user={
+              id:u.id,
+              username:u.username,
+              email:u.email,
+              display_name:u.display_name || (u.first_name && u.last_name ? (u.first_name + ' ' + u.last_name) : (u.username || '')),
+              first_name:u.first_name,
+              last_name:u.last_name,
+              avatarUrl:(u.avatar || u.avatar_url || u.profile_photo || u.photo || ''),
+              phone:phone
+            };
+            render();
+          });
         })
         .fail(function(){toast('error','Failed to update profile')});
     });
@@ -3747,6 +3807,7 @@ function login(){
         .done(function(){
           toast('success','Review submitted');
           state.userReviews = Array.isArray(state.userReviews)? state.userReviews : [];
+          var prod = (state.data.allProducts || []).find(function(p){ return p.id === pid; });
           state.userReviews.push({ id:Date.now(), product_id:pid, product_name:(prod.title||prod.name||''), rating:rating, title:title, review:text, date:new Date().toISOString() });
           state.reviewProducts = (state.reviewProducts||[]).filter(function(p){ return parseInt(p.product_id,10)!==pid; });
           render();
@@ -3803,6 +3864,11 @@ function login(){
   function start() {
     showSplashOnce(function(){
       $('#app').html(shell());
+      try{
+        var lgSrc=$('#headerLogo').attr('src')||'';
+        $('#headerLogo').on('load',function(){ var url=$(this).attr('src')||''; if(url){ getImageAverageColor(url,function(hex){ state.footerActiveColor=hex; render(); }); } });
+        if(lgSrc){ var el=document.getElementById('headerLogo'); if(el && el.complete){ getImageAverageColor(lgSrc,function(hex){ state.footerActiveColor=hex; render(); }); } }
+      }catch(_){}
       try{
         API.siteInfo()
           .done(function(res){

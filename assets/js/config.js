@@ -172,6 +172,8 @@ window.API=(function(){
         authLogin:function(body){return post(APIConf.endpoints.authLogin,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
         authProfile:function(){return get(APIConf.endpoints.authProfile)},
         authProfileUpdate:function(body){return put(APIConf.endpoints.authProfile,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
+        authProfileUpdateAvatar:function(file){var fd=new FormData();fd.append('avatar',file);fd.append('photo',file);fd.append('profile_photo',file);return put(APIConf.endpoints.authProfile,{formData:fd}).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
+        authProfileUpdateAvatarBase64:function(file){var dfd=$.Deferred();try{var reader=new FileReader();reader.onload=function(e){var data=(e.target&&e.target.result)||'';var base64=(data||'').toString().replace(/^data:[^;]+;base64,/, '');var body={avatar_base64:base64,filename:(file&&file.name)||'avatar.jpg',mime:(file&&file.type)||'image/jpeg'};put(APIConf.endpoints.authProfile,{body:body}).always(function(){invalidateCache(APIConf.endpoints.authProfile)}).done(function(res){dfd.resolve(res)}).fail(function(err){dfd.reject(err)})};reader.onerror=function(){dfd.reject(new Error('Failed to read file'))};reader.readAsDataURL(file)}catch(e){dfd.reject(e)}return dfd.promise()},
         authLogout:function(){return post(APIConf.endpoints.authLogout).always(function(){invalidateCache(APIConf.endpoints.authProfile)})},
         authValidateToken:function(){return get(APIConf.endpoints.authValidateToken)},
         getWishlist:function(){return get(APIConf.endpoints.wishlist)},
